@@ -5,19 +5,32 @@
   "scripts": {
     "prepare": "husky",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
-    "format": "prettier --write 'src/**/*.{ts,tsx,json}'"
+    "format": "prettier --write 'src/**/*.{ts,tsx,json}'",
+    "test": "vitest run",
+    "db:generate": "prisma generate --config prisma/prisma.config.ts",
+    "db:migrate": "prisma migrate dev --config prisma/prisma.config.ts",
+    "db:seed": "npx tsx src/db/seeds/seed.ts",
+    "bot:start": "npx tsx src/bot/main.ts"
   },
   "dependencies": {
-    "axios": "^1.7.9"
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "axios": "^1.7.9",
+    "dotenv": "^17.4.2",
+    "socks-proxy-agent": "^10.0.0",
+    "telegraf": "^4.16.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.1",
-    "prettier": "^3.3.3",
     "husky": "^9.1.6",
     "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "prisma": "^7.8.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.3",
     "vitest": "^3.1.1"
   }
 }

@@ -1,0 +1,9 @@
+export const SCENE_START = 'scene:start';
+export const SCENE_HOME = 'scene:home';
+export const SCENE_BUY_ACCOUNT = 'scene:buy_account';
+export const SCENE_PAYMENT_PENDING = 'scene:payment_pending';
+export const SCENE_MANAGE_ACCOUNTS = 'scene:manage_accounts';
+export const SCENE_VIEW_ACCOUNT = 'scene:view_account';
+export const SCENE_TEST_ACCOUNT = 'scene:test_account';
+export const SCENE_SUPPORT = 'scene:support';
+export const SCENE_ERROR = 'scene:error';

@@ -13,28 +13,39 @@ A multi-interface VPN subscription management system for Marzban panel.
 - **Pre-commit:** Prettier, ESLint, Husky
 - **VCS:** Git
 
+## Current Focus
+Telegram bot only. CLI and admin panel are deferred to `TODO.md`.
+
 ## Architecture Overview
-Three interfaces, one core:
-- **Telegram Bot:** User-facing subscription management
-- **Admin Panel:** Next.js/React dashboard
-- **CLI:** Command-line admin tools
+Three interfaces, one core (bot is the current priority):
+- **Telegram Bot:** User-facing subscription management (Persian)
+- **Admin Panel:** Next.js/React dashboard (deferred)
+- **CLI:** Command-line admin tools (deferred)
 - **Shared Core:** Business logic, DB models, Marzban API client
+
+## Bot Rules
+- **Language:** Persian (فارسی)
+- **No hardcoded strings:** All user-facing text comes from `bot_messages` DB table
+- **Payment:** Manual admin approval (no payment gateway)
+- **Plans:** DB-based, never hardcoded
+- **Test accounts:** 1 hour, 100MB, one per user (checked via `user.has_test` flag)
+- **Scenes:** Every scene must match its `design/bot/scenes/*.md` spec
 
 ## Available Files (load as needed)
 - `@docs/internal/marzban_api.json` - Marzban VPN API spec
-- `@docs/internal/telegram_bot.md` - Bot commands, flows, UI patterns
-- `@docs/internal/admin_panel.md` - Admin UI requirements
-- `@docs/internal/cli.md` - CLI command reference
 - `@WORKING.md` - Current task with detailed steps
 - `@ARCHITECTURE.md` - Technical decisions and system design
 - `@DESIGN.md` - UI/UX patterns, component structure
 - `@RECAP.md` - Recap of the commit
+- `@TODO.md` - Deferred features (CLI, admin panel, etc.)
+- `@design/bot/scenes/*.md` - Scene design specs (one per scene)
+- `@design/bot/messages.md` - Bot message registry and DB-backed message system
 
 ## Development Workflow
 1. **Read task:** Check `@WORKING.md` for current feature
-2. **Implementation order:** CLI → Bot → Admin Panel (separate commits)
+2. **Implementation order:** Core → Bot (CLI and panel deferred)
 3. **Document decisions:** Update `@ARCHITECTURE.md` and `@DESIGN.md`
-4. **Commit format:** `feat(cli|bot|panel): description`
+4. **Commit format:** `feat(core|bot): description` (cli|panel added later)
 5. **Mark complete:** Update `@WORKING.md` status
 6. **Ask before proceeding:** Don't start new features without instruction
 
