@@ -4,10 +4,11 @@ A multi-interface VPN subscription management system for Marzban panel.
 
 ## Tech Stack
 - **Language:** TypeScript
-- **Runtime:** Node.js [version?]
+- **Runtime:** Node.js 24
 - **Package Manager:** Yarn
 - **Framework:** Next.js (admin panel)
-- **Database:** PostgreSQL + [Prisma/TypeORM?]
+- **Database:** PostgreSQL + Prisma
+- **HTTP Client:** Axios
 - **Bot Library:** Telegraf.js
 - **Pre-commit:** Prettier, ESLint, Husky
 - **VCS:** Git
@@ -27,6 +28,7 @@ Three interfaces, one core:
 - `@WORKING.md` - Current task with detailed steps
 - `@ARCHITECTURE.md` - Technical decisions and system design
 - `@DESIGN.md` - UI/UX patterns, component structure
+- `@RECAP.md` - Recap of the commit
 
 ## Development Workflow
 1. **Read task:** Check `@WORKING.md` for current feature
