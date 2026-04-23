@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/bot"
+  },
+  "include": ["src/bot/**/*", "src/core/**/*", "src/db/**/*"]
+}

@@ -1,0 +1,45 @@
+# .claudeignore
+
+# Dependencies
+node_modules/
+.yarn/
+.pnp.*
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test coverage
+coverage/
+
+# Specific files
+package-lock.json
+yarn.lock
