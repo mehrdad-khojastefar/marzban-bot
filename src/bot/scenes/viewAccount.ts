@@ -2,9 +2,11 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_VIEW_ACCOUNT, SCENE_MANAGE_ACCOUNTS } from './constants';
 import { getMessage } from '../services/messageService';
+import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
-import { formatBytes, formatDaysLeft } from '../../core/utils/format';
+import { formatBytes, formatDaysLeft, buildSubUrl } from '../../core/utils/format';
+import { loadEnv } from '../../core/utils/config';
 
 export const viewAccountScene = new Scenes.BaseScene<BotContext>(SCENE_VIEW_ACCOUNT);
 
@@ -46,25 +48,27 @@ viewAccountScene.enter(async (ctx) => {
 
   const isExpired = marzbanUser.status === 'expired' || marzbanUser.status === 'limited';
 
-  const text =
+  let text =
     `${title}\n\n` +
     `📛 نام: ${name}\n` +
     `📊 مصرف: ${used} / ${limit}\n` +
     `⏰ انقضا: ${daysLeft}\n` +
     `🔗 وضعیت: ${status}`;
 
+  if (isExpired) {
+    const expiredMsg = await getMessage('view.expired');
+    text += `\n\n${expiredMsg}`;
+  }
+
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
   if (!isExpired) {
     buttons.push([Markup.button.callback('📋 دریافت کانفیگ', 'get_config')]);
-  } else {
-    const expiredMsg = await getMessage('view.expired');
-    await ctx.reply(expiredMsg);
   }
 
   buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
 
-  await ctx.reply(text, Markup.inlineKeyboard(buttons));
+  await sendOrEdit(ctx, text, Markup.inlineKeyboard(buttons));
 });
 
 viewAccountScene.action('get_config', async (ctx) => {
@@ -80,12 +84,18 @@ viewAccountScene.action('get_config', async (ctx) => {
   const marzbanUser = await marzban.getUser(account.marzban_username);
 
   const caption = await getMessage('view.config_caption');
+  const env = loadEnv();
+  const parts: string[] = [];
 
-  if (marzbanUser.subscription_url) {
-    await ctx.reply(`${caption}\n\n${marzbanUser.subscription_url}`);
-  } else if (marzbanUser.links && marzbanUser.links.length > 0) {
-    await ctx.reply(`${caption}\n\n${marzbanUser.links.join('\n')}`);
+  const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, account.marzban_username);
+  parts.push(`🔗 لینک اشتراک:\n${subUrl}`);
+
+  if (marzbanUser.links && marzbanUser.links.length > 0) {
+    parts.push(`📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`);
   }
+
+  // Config links are sent as a separate message (exception to single-message rule)
+  await ctx.reply(`${caption}\n\n${parts.join('\n\n')}`);
 });
 
 viewAccountScene.action('back', async (ctx) => {

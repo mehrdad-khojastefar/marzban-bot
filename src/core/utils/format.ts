@@ -25,3 +25,27 @@ export function formatPrice(toman: number): string {
   const formatted = toman.toLocaleString('en-US');
   return toPersianDigits(formatted) + ' تومان';
 }
+
+export function buildSubUrl(subBaseUrl: string, proxies: Record<string, unknown>, username: string): string {
+  // Extract UUID from the first available proxy (e.g. proxies.vmess.id)
+  let uuid = '';
+  for (const proto of Object.values(proxies)) {
+    if (proto && typeof proto === 'object' && 'id' in proto) {
+      uuid = String((proto as Record<string, unknown>).id);
+      break;
+    }
+  }
+  const base = subBaseUrl.replace(/\/+$/, '');
+  return `${base}/sub/${uuid}/${username}/`;
+}
+
+export function formatPercent(used: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((used / total) * 100));
+}
+
+export function formatProgressBar(percent: number, width: number = 14): string {
+  const filled = Math.round((percent / 100) * width);
+  const empty = width - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty) + ' ' + toPersianDigits(String(percent)) + '٪';
+}

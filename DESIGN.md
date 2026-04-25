@@ -1,152 +1,86 @@
-# Design
+# Design — Seller System MVP
 
-## Bot Scene Design
-
-Every scene has a detailed spec at `design/bot/scenes/<scene>.md`. This document is the quick reference.
-
----
-
-### Scene Map
+## Scene Map (new + modified)
 
 ```
-/start
-  └── HOME
-        ├── مدیریت اکانت‌ها → MANAGE_ACCOUNTS → VIEW_ACCOUNT
-        ├── خرید اکانت     → BUY_ACCOUNT → PAYMENT_PENDING
-        ├── اکانت تستی     → TEST_ACCOUNT
-        └── پشتیبانی       → SUPPORT
+/start (modified)
+  └── HOME (modified)
+        ├── خرید اکانت         → toast (gated by buy_enabled)
+        ├── پنل فروشنده        → SELLER_PANEL (seller-only, new)
+        │     ├── ساخت اکانت   → SELLER_CREATE_ACCOUNT
+        │     ├── اکانت‌ها      → SELLER_ACCOUNTS → SELLER_VIEW_ACCOUNT
+        │     └── گزارش مالی    → SELLER_REPORT
+        └── مدیریت فروشندگان   → ADMIN_SELLERS (admin-only, new)
+              └── جزئیات       → ADMIN_SELLER_DETAIL
+                    ├── پلن‌ها  → ADMIN_SELLER_PLANS
+                    └── تسویه  → ADMIN_SELLER_ACCOUNTS
 ```
 
-All error paths → ERROR → HOME.
+## Modified Scenes
 
----
+### START
+- After user creation/lookup, check `sellers` table by `chat_id`
+- If seller record exists with `user_id = null` → link, show `seller.welcome`
 
-### Scene Reference
+### HOME
+- "خرید اکانت" reads `buy_enabled` setting. If `"false"` → `answerCbQuery` toast
+- "🏪 پنل فروشنده" button: only rendered if user is active seller
+- "⚙️ مدیریت فروشندگان" button: only rendered if `chat_id === ADMIN_CHAT_ID`
 
-| Scene | File | Enter Behavior |
-|---|---|---|
-| Start | `src/bot/scenes/start.ts` | Register or welcome back, store session userId, → HOME |
-| Home | `src/bot/scenes/home.ts` | Show greeting + 4 inline buttons |
-| Buy Account | `src/bot/scenes/buyAccount.ts` | Fetch plans from DB, show as buttons, create Payment on select |
-| Payment Pending | `src/bot/scenes/paymentPending.ts` | Accept receipt photo, forward to admin, wait for approval |
-| Manage Accounts | `src/bot/scenes/manageAccounts.ts` | List accounts with live Marzban usage |
-| View Account | `src/bot/scenes/viewAccount.ts` | Account detail + config link |
-| Test Account | `src/bot/scenes/testAccount.ts` | Check has_test → provision 1h/100MB via Marzban |
-| Support | `src/bot/scenes/support.ts` | Show support username |
-| Error | `src/bot/scenes/error.ts` | Show error message, back → HOME |
+## New Scenes (9)
 
----
+| Scene | Purpose |
+|---|---|
+| SELLER_PANEL | Seller hub: create, accounts, report |
+| SELLER_CREATE_ACCOUNT | Pick plan → instant Marzban provision → optional note → config |
+| SELLER_ACCOUNTS | Paginated list (8/page) with search by note |
+| SELLER_VIEW_ACCOUNT | Live usage + progress bar + subscription link + edit note |
+| SELLER_REPORT | Financial summary: total/paid/outstanding |
+| ADMIN_SELLERS | List sellers with debt, add by chat ID |
+| ADMIN_SELLER_DETAIL | Seller profile + financial summary + management |
+| ADMIN_SELLER_PLANS | Per-seller plan CRUD (add, toggle active) |
+| ADMIN_SELLER_ACCOUNTS | Filtered list + checkbox select + batch settlement |
 
-## Message System
+Full specs: `design/bot/scenes/*.md`
 
-All user-facing text is stored in `bot_messages` DB table. Full registry at `design/bot/messages.md`.
+## Seller Account Creation Flow
 
-### How it works
+```
+Pick plan → Marzban addUser (s_XXXXXX, 30d, plan data_limit)
+  → Save Account (payment_status: unpaid)
+  → Prompt note (optional)
+  → Send subscription link
+```
+
+## Admin Settlement Flow
+
+```
+Filter (all/unpaid/paid) → checkbox select → batch mark as paid
+Or: "تسویه همه" → mark ALL unpaid as paid
+```
+
+## Setting System
 
 ```typescript
-import { getMessage } from '@/bot/services/messageService'
-
-const text = await getMessage('start.welcome_new', { first_name: 'مهرداد' })
-// → "سلام مهرداد! به ربات VPN خوش آمدید."
+import { getSetting } from '@/bot/services/settingService'
+const buyEnabled = await getSetting('buy_enabled')  // "true" | "false"
 ```
 
-- **Cache:** In-memory Map, 5-minute TTL, auto-refetches on expiry
-- **Placeholders:** `{variable}` syntax, replaced at runtime
-- **Missing key:** Returns the key string (safe fallback)
-- **Init:** `initMessageService(db)` once at startup
+- DB-backed (`bot_settings` table), 30s cache TTL
+- `initSettingService(db)` at startup
 
----
-
-## Payment Flow
-
-```
-User selects plan
-  → Payment created (status: pending)
-  → User shown card number + amount
-  → User sends receipt photo
-  → Payment updated (status: awaiting_approval, receipt stored)
-  → Photo forwarded to admin with approve/reject buttons
-  → Admin taps approve
-    → Payment approved, account provisioned via Marzban
-    → User notified with success message
-  → Admin taps reject
-    → Payment rejected, user notified
-```
-
-Admin handler is global (not in a scene) — registered in `bot.ts` via `registerAdminPaymentHandler()`.
-
----
-
-## Session Data
+## Session Data Additions
 
 ```typescript
-interface SessionData {
-  userId?: number           // DB user ID (set in Start scene)
-  selectedPlanId?: number   // Plan chosen in Buy scene
-  pendingPaymentId?: number // Payment awaiting receipt/approval
-  selectedAccountId?: number // Account being viewed
-}
+// seller flows
+sellerId?: number
+selectedSellerPlanId?: number
+
+// admin seller management
+managingSellerId?: number
+managingSellerPlanId?: number
+accountFilter?: 'all' | 'unpaid' | 'paid'
+selectedAccountIds?: number[]
+currentPage?: number
+searchQuery?: string
 ```
-
----
-
-## Marzban Service
-
-Public API via singleton — see `docs/src/core/marzban/marzban_service.md` for full usage guide.
-
-```typescript
-import { initMarzban, getMarzban } from '@/core/marzban'
-
-// At startup
-initMarzban({ baseUrl, username, password })
-
-// Anywhere
-const marzban = getMarzban()
-const user = await marzban.addUser({ username, data_limit, expire, status })
-```
-
-44 methods across: Admin, User, UserTemplate, Node, System, Core, Subscription.
-
----
-
-## DB Singleton
-
-Same pattern as Marzban:
-
-```typescript
-import { initDb, getDb } from '@/core/db'
-
-initDb(databaseUrl)     // once at startup
-const db = getDb()      // anywhere
-```
-
----
-
-## Formatting Utilities
-
-```typescript
-import { toPersianDigits, formatBytes, formatDaysLeft, formatPrice } from '@/core/utils'
-
-toPersianDigits('123')        // '۱۲۳'
-formatBytes(20 * 1073741824)  // '۲۰ GB'
-formatDaysLeft(futureDate)    // '۱۵ روز'
-formatPrice(50000)            // '۵۰,۰۰۰ تومان'
-```
-
----
-
-## Error Handling
-
-```typescript
-import { MarzbanError, isMarzbanError } from '@/core/marzban'
-
-try {
-  await marzban.getUser('alice')
-} catch (err) {
-  if (isMarzbanError(err)) {
-    // err.statusCode: 400 | 401 | 403 | 404 | 409 | 422
-  }
-}
-```
-
-Bot-level: `errorHandler()` middleware catches unhandled errors, logs them, sends `error.message` from DB.

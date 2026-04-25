@@ -2,6 +2,7 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_MANAGE_ACCOUNTS, SCENE_HOME, SCENE_VIEW_ACCOUNT } from './constants';
 import { getMessage } from '../services/messageService';
+import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
 import { formatBytes, formatDaysLeft } from '../../core/utils/format';
@@ -17,7 +18,11 @@ manageAccountsScene.enter(async (ctx) => {
 
   if (accounts.length === 0) {
     const msg = await getMessage('manage.no_accounts');
-    await ctx.reply(msg, Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]));
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
     return;
   }
 
@@ -45,7 +50,7 @@ manageAccountsScene.enter(async (ctx) => {
   buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
 
   const title = await getMessage('manage.title');
-  await ctx.reply(`${title}\n\n${lines.join('\n\n')}`, Markup.inlineKeyboard(buttons));
+  await sendOrEdit(ctx, `${title}\n\n${lines.join('\n\n')}`, Markup.inlineKeyboard(buttons));
 });
 
 manageAccountsScene.action(/^view_account_(\d+)$/, async (ctx) => {

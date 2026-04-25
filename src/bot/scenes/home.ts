@@ -6,24 +6,45 @@ import {
   SCENE_TEST_ACCOUNT,
   SCENE_BUY_ACCOUNT,
   SCENE_SUPPORT,
+  SCENE_SELLER_PANEL,
+  SCENE_ADMIN_SELLERS,
 } from './constants';
 import { getMessage } from '../services/messageService';
+import { getSetting } from '../services/settingService';
+import { sendOrEdit } from '../services/renderService';
+import { getDb } from '../../core/db';
+import { loadEnv } from '../../core/utils/config';
 
 export const homeScene = new Scenes.BaseScene<BotContext>(SCENE_HOME);
 
 homeScene.enter(async (ctx) => {
+  const chatId = BigInt(ctx.from!.id);
+  const db = getDb();
+  const env = loadEnv();
+
   const msg = await getMessage('home.greeting');
-  await ctx.reply(
-    msg,
-    Markup.inlineKeyboard([
-      [Markup.button.callback('مدیریت اکانت‌ها', 'manage_accounts')],
-      [
-        Markup.button.callback('اکانت تستی', 'test_account'),
-        Markup.button.callback('خرید اکانت', 'buy_account'),
-      ],
-      [Markup.button.callback('پشتیبانی', 'support')],
-    ]),
-  );
+
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [
+    [Markup.button.callback('مدیریت اکانت‌ها', 'manage_accounts')],
+    [
+      Markup.button.callback('اکانت تستی', 'test_account'),
+      Markup.button.callback('خرید اکانت', 'buy_account'),
+    ],
+    [Markup.button.callback('پشتیبانی', 'support')],
+  ];
+
+  // Seller button — only if user is an active seller
+  const seller = await db.seller.findUnique({ where: { chat_id: chatId } });
+  if (seller && seller.is_active) {
+    buttons.push([Markup.button.callback('🏪 پنل فروشنده', 'seller_panel')]);
+  }
+
+  // Admin button — only if user is admin
+  if (String(chatId) === env.ADMIN_CHAT_ID) {
+    buttons.push([Markup.button.callback('⚙️ مدیریت فروشندگان', 'admin_sellers')]);
+  }
+
+  await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
 
 homeScene.action('manage_accounts', async (ctx) => {
@@ -37,6 +58,12 @@ homeScene.action('test_account', async (ctx) => {
 });
 
 homeScene.action('buy_account', async (ctx) => {
+  const buyEnabled = await getSetting('buy_enabled');
+  if (buyEnabled !== 'true') {
+    const disabledMsg = await getMessage('buy.disabled');
+    await ctx.answerCbQuery(disabledMsg, { show_alert: true });
+    return;
+  }
   await ctx.answerCbQuery();
   await ctx.scene.enter(SCENE_BUY_ACCOUNT);
 });
@@ -44,4 +71,14 @@ homeScene.action('buy_account', async (ctx) => {
 homeScene.action('support', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.scene.enter(SCENE_SUPPORT);
+});
+
+homeScene.action('seller_panel', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_SELLER_PANEL);
+});
+
+homeScene.action('admin_sellers', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_SELLERS);
 });

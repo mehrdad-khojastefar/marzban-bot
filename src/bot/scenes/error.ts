@@ -2,12 +2,14 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_ERROR, SCENE_HOME } from './constants';
 import { getMessage } from '../services/messageService';
+import { sendOrEdit } from '../services/renderService';
 
 export const errorScene = new Scenes.BaseScene<BotContext>(SCENE_ERROR);
 
 errorScene.enter(async (ctx) => {
   const msg = await getMessage('error.message');
-  await ctx.reply(
+  await sendOrEdit(
+    ctx,
     msg,
     Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت به منو', 'back')]]),
   );

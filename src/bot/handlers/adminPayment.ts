@@ -34,8 +34,18 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
     const expireTimestamp =
       Math.floor(Date.now() / 1000) + payment.plan.duration_days * 24 * 60 * 60;
 
+    const inbounds = await marzban.getInbounds();
+    const enabledProtocols = Object.keys(inbounds).filter(
+      (proto) => inbounds[proto as keyof typeof inbounds]?.length > 0,
+    );
+    const proxies: Record<string, Record<string, unknown>> = {};
+    for (const proto of enabledProtocols) {
+      proxies[proto] = {};
+    }
+
     await marzban.addUser({
       username: marzbanUsername,
+      proxies,
       data_limit: Number(payment.plan.data_limit),
       expire: expireTimestamp,
       status: 'active',

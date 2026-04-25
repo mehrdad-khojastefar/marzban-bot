@@ -11,6 +11,7 @@ startScene.enter(async (ctx) => {
   const db = getDb();
 
   let user = await db.user.findUnique({ where: { chat_id: chatId } });
+  let greeting: string;
 
   if (!user) {
     user = await db.user.create({
@@ -21,13 +22,36 @@ startScene.enter(async (ctx) => {
         last_name: ctx.from!.last_name ?? null,
       },
     });
-    const msg = await getMessage('start.welcome_new', { first_name: user.first_name });
-    await ctx.reply(msg);
+    greeting = await getMessage('start.welcome_new', { first_name: user.first_name });
   } else {
-    const msg = await getMessage('start.welcome_back', { first_name: user.first_name });
-    await ctx.reply(msg);
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        username: ctx.from!.username ?? null,
+        first_name: ctx.from!.first_name,
+        last_name: ctx.from!.last_name ?? null,
+      },
+    });
+    greeting = await getMessage('start.welcome_back', { first_name: user.first_name });
   }
 
   ctx.session.userId = user.id;
+
+  // Check if this user is a seller that hasn't been linked yet
+  const seller = await db.seller.findUnique({ where: { chat_id: chatId } });
+  if (seller && !seller.user_id) {
+    await db.seller.update({
+      where: { id: seller.id },
+      data: { user_id: user.id },
+    });
+    const welcomeMsg = await getMessage('seller.welcome');
+    greeting += '\n\n' + welcomeMsg;
+  }
+
+  // Send the greeting as a fresh message (this becomes the tracked message),
+  // then immediately enter HOME which will edit it with the menu.
+  const sent = await ctx.reply(greeting);
+  ctx.session.lastBotMessageId = sent.message_id;
+
   await ctx.scene.enter(SCENE_HOME);
 });

@@ -2,6 +2,7 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_BUY_ACCOUNT, SCENE_HOME, SCENE_PAYMENT_PENDING } from './constants';
 import { getMessage } from '../services/messageService';
+import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatBytes, formatPrice, toPersianDigits } from '../../core/utils/format';
 
@@ -13,7 +14,11 @@ buyAccountScene.enter(async (ctx) => {
 
   if (plans.length === 0) {
     const msg = await getMessage('buy.no_plans');
-    await ctx.reply(msg, Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]));
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
     return;
   }
 
@@ -26,7 +31,7 @@ buyAccountScene.enter(async (ctx) => {
   ]);
   buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
 
-  await ctx.reply(msg, Markup.inlineKeyboard(buttons));
+  await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
 
 buyAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
@@ -54,7 +59,8 @@ buyAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
 
   const msg = await getMessage('buy.payment_instructions');
   const cardNumber = process.env.CARD_NUMBER ?? '';
-  await ctx.reply(
+  await sendOrEdit(
+    ctx,
     `${msg}\n\nمبلغ: ${formatPrice(plan.price)}\nشماره کارت: ${cardNumber}\n\nپس از واریز، رسید خود را ارسال کنید.`,
   );
 

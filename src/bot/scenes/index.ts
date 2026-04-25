@@ -9,6 +9,15 @@ import { viewAccountScene } from './viewAccount';
 import { testAccountScene } from './testAccount';
 import { supportScene } from './support';
 import { errorScene } from './error';
+import { sellerPanelScene } from './sellerPanel';
+import { sellerCreateAccountScene } from './sellerCreateAccount';
+import { sellerAccountsScene } from './sellerAccounts';
+import { sellerViewAccountScene } from './sellerViewAccount';
+import { sellerReportScene } from './sellerReport';
+import { adminSellersScene } from './adminSellers';
+import { adminSellerDetailScene } from './adminSellerDetail';
+import { adminSellerPlansScene } from './adminSellerPlans';
+import { adminSellerAccountsScene } from './adminSellerAccounts';
 
 export {
   SCENE_START,
@@ -20,6 +29,15 @@ export {
   SCENE_TEST_ACCOUNT,
   SCENE_SUPPORT,
   SCENE_ERROR,
+  SCENE_SELLER_PANEL,
+  SCENE_SELLER_CREATE_ACCOUNT,
+  SCENE_SELLER_ACCOUNTS,
+  SCENE_SELLER_VIEW_ACCOUNT,
+  SCENE_SELLER_REPORT,
+  SCENE_ADMIN_SELLERS,
+  SCENE_ADMIN_SELLER_DETAIL,
+  SCENE_ADMIN_SELLER_PLANS,
+  SCENE_ADMIN_SELLER_ACCOUNTS,
 } from './constants';
 
 export function createStage(): Scenes.Stage<BotContext> {
@@ -33,5 +51,14 @@ export function createStage(): Scenes.Stage<BotContext> {
     testAccountScene,
     supportScene,
     errorScene,
+    sellerPanelScene,
+    sellerCreateAccountScene,
+    sellerAccountsScene,
+    sellerViewAccountScene,
+    sellerReportScene,
+    adminSellersScene,
+    adminSellerDetailScene,
+    adminSellerPlansScene,
+    adminSellerAccountsScene,
   ]);
 }

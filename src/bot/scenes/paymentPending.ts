@@ -2,13 +2,18 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_PAYMENT_PENDING, SCENE_HOME } from './constants';
 import { getMessage } from '../services/messageService';
+import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 
 export const paymentPendingScene = new Scenes.BaseScene<BotContext>(SCENE_PAYMENT_PENDING);
 
 paymentPendingScene.enter(async (ctx) => {
   const msg = await getMessage('payment.send_receipt');
-  await ctx.reply(msg, Markup.inlineKeyboard([[Markup.button.callback('❌ انصراف', 'cancel_payment')]]));
+  await sendOrEdit(
+    ctx,
+    msg,
+    Markup.inlineKeyboard([[Markup.button.callback('❌ انصراف', 'cancel_payment')]]),
+  );
 });
 
 paymentPendingScene.on('photo', async (ctx) => {
@@ -50,12 +55,16 @@ paymentPendingScene.on('photo', async (ctx) => {
   }
 
   const msg = await getMessage('payment.waiting');
-  await ctx.reply(msg);
+  await sendOrEdit(ctx, msg);
 });
 
 paymentPendingScene.on('message', async (ctx) => {
   const msg = await getMessage('payment.send_receipt');
-  await ctx.reply(msg);
+  await sendOrEdit(
+    ctx,
+    msg,
+    Markup.inlineKeyboard([[Markup.button.callback('❌ انصراف', 'cancel_payment')]]),
+  );
 });
 
 paymentPendingScene.action('cancel_payment', async (ctx) => {
@@ -65,7 +74,5 @@ paymentPendingScene.action('cancel_payment', async (ctx) => {
     const db = getDb();
     await db.payment.update({ where: { id: paymentId }, data: { status: 'cancelled' } });
   }
-  const msg = await getMessage('payment.cancelled');
-  await ctx.reply(msg);
   await ctx.scene.enter(SCENE_HOME);
 });

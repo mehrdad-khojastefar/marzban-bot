@@ -19,6 +19,11 @@ enum PaymentStatus {
   cancelled
 }
 
+enum AccountPaymentStatus {
+  unpaid
+  paid
+}
+
 model User {
   id         Int       @id @default(autoincrement())
   chat_id    BigInt    @unique
@@ -29,6 +34,7 @@ model User {
   created_at DateTime  @default(now())
   accounts   Account[]
   payments   Payment[]
+  seller     Seller?
 
   @@map("users")
 }
@@ -48,15 +54,21 @@ model Plan {
 }
 
 model Account {
-  id               Int         @id @default(autoincrement())
+  id               Int                   @id @default(autoincrement())
   user_id          Int
   plan_id          Int?
+  seller_id        Int?
+  seller_plan_id   Int?
   marzban_username String
   type             AccountType
+  payment_status   AccountPaymentStatus?
+  note             String?
   expires_at       DateTime
-  created_at       DateTime    @default(now())
-  user             User        @relation(fields: [user_id], references: [id])
-  plan             Plan?       @relation(fields: [plan_id], references: [id])
+  created_at       DateTime              @default(now())
+  user             User                  @relation(fields: [user_id], references: [id])
+  plan             Plan?                 @relation(fields: [plan_id], references: [id])
+  seller           Seller?               @relation(fields: [seller_id], references: [id])
+  seller_plan      SellerPlan?           @relation(fields: [seller_plan_id], references: [id])
 
   @@map("accounts")
 }
@@ -84,4 +96,40 @@ model BotMessage {
   updated_at DateTime @updatedAt
 
   @@map("bot_messages")
+}
+
+model Seller {
+  id         Int          @id @default(autoincrement())
+  chat_id    BigInt       @unique
+  user_id    Int?         @unique
+  note       String?
+  is_active  Boolean      @default(true)
+  created_at DateTime     @default(now())
+  user       User?        @relation(fields: [user_id], references: [id])
+  plans      SellerPlan[]
+  accounts   Account[]
+
+  @@map("sellers")
+}
+
+model SellerPlan {
+  id         Int       @id @default(autoincrement())
+  seller_id  Int
+  name       String
+  data_limit BigInt
+  price      Int
+  is_active  Boolean   @default(true)
+  created_at DateTime  @default(now())
+  seller     Seller    @relation(fields: [seller_id], references: [id])
+  accounts   Account[]
+
+  @@map("seller_plans")
+}
+
+model BotSetting {
+  key        String   @id @db.VarChar(100)
+  value      String
+  updated_at DateTime @updatedAt
+
+  @@map("bot_settings")
 }

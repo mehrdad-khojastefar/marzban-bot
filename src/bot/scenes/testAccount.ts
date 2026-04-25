@@ -2,8 +2,11 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_TEST_ACCOUNT, SCENE_HOME } from './constants';
 import { getMessage } from '../services/messageService';
+import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
+import { buildSubUrl } from '../../core/utils/format';
+import { loadEnv } from '../../core/utils/config';
 
 const TEST_DATA_LIMIT = 104857600; // 100MB
 const TEST_DURATION_SECONDS = 3600; // 1 hour
@@ -21,20 +24,34 @@ testAccountScene.enter(async (ctx) => {
 
   if (user.has_test) {
     const msg = await getMessage('test.already_used');
-    await ctx.reply(msg, Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]));
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
     return;
   }
 
   const creatingMsg = await getMessage('test.creating');
-  await ctx.reply(creatingMsg);
+  await sendOrEdit(ctx, creatingMsg);
 
   try {
     const marzban = getMarzban();
     const chatId = ctx.from!.id;
     const marzbanUsername = `test_${chatId}_${Date.now()}`;
 
+    const inbounds = await marzban.getInbounds();
+    const enabledProtocols = Object.keys(inbounds).filter(
+      (proto) => inbounds[proto as keyof typeof inbounds]?.length > 0,
+    );
+    const proxies: Record<string, Record<string, unknown>> = {};
+    for (const proto of enabledProtocols) {
+      proxies[proto] = {};
+    }
+
     const marzbanUser = await marzban.addUser({
       username: marzbanUsername,
+      proxies,
       data_limit: TEST_DATA_LIMIT,
       expire: Math.floor(Date.now() / 1000) + TEST_DURATION_SECONDS,
       status: 'active',
@@ -52,24 +69,33 @@ testAccountScene.enter(async (ctx) => {
     await db.user.update({ where: { id: user.id }, data: { has_test: true } });
 
     const readyMsg = await getMessage('test.ready');
-    const configCaption = await getMessage('view.config_caption');
-
-    await ctx.reply(readyMsg + '\n\n⏰ مدت: ۱ ساعت\n📊 حجم: ۱۰۰ مگابایت');
-
-    if (marzbanUser.subscription_url) {
-      await ctx.reply(`${configCaption}\n\n${marzbanUser.subscription_url}`);
-    } else if (marzbanUser.links && marzbanUser.links.length > 0) {
-      await ctx.reply(`${configCaption}\n\n${marzbanUser.links.join('\n')}`);
-    }
-
-    await ctx.reply(
-      'بازگشت به منو',
+    await sendOrEdit(
+      ctx,
+      readyMsg + '\n\n⏰ مدت: ۱ ساعت\n📊 حجم: ۱۰۰ مگابایت',
       Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
     );
+
+    // Config links sent as separate message (exception)
+    const env = loadEnv();
+    const configCaption = await getMessage('view.config_caption');
+    const parts: string[] = [];
+
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
+    parts.push(`🔗 لینک اشتراک:\n${subUrl}`);
+
+    if (marzbanUser.links && marzbanUser.links.length > 0) {
+      parts.push(`📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`);
+    }
+
+    await ctx.reply(`${configCaption}\n\n${parts.join('\n\n')}`);
   } catch (err) {
     console.error('Test account provisioning failed:', err);
     const failMsg = await getMessage('test.failed');
-    await ctx.reply(failMsg, Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]));
+    await sendOrEdit(
+      ctx,
+      failMsg,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
   }
 });
 

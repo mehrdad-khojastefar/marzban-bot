@@ -5,6 +5,7 @@ import { loadEnv } from '../core/utils/config';
 import { initDb } from '../core/db';
 import { initMarzban } from '../core/marzban';
 import { initMessageService } from './services/messageService';
+import { initSettingService } from './services/settingService';
 import { createStage, SCENE_START } from './scenes';
 import { errorHandler } from './middlewares';
 import { registerAdminPaymentHandler } from './handlers';
@@ -19,6 +20,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
     password: env.MARZBAN_PASSWORD,
   });
   initMessageService(db);
+  initSettingService(db);
 
   const telegrafOptions: Partial<Telegraf.Options<BotContext>> = {};
   if (env.SOCKS5_PROXY) {

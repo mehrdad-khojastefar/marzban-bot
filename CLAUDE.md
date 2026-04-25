@@ -30,6 +30,7 @@ Three interfaces, one core (bot is the current priority):
 - **Plans:** DB-based, never hardcoded
 - **Test accounts:** 1 hour, 100MB, one per user (checked via `user.has_test` flag)
 - **Scenes:** Every scene must match its `design/bot/scenes/*.md` spec
+- **Single-message UI:** The user must see only ONE message throughout the entire conversation. Never send a new message — always edit the existing one using `ctx.editMessageText()` / `ctx.editMessageReplyMarkup()`. The only exceptions are config/subscription links (sent as separate messages the user needs to copy). This keeps the chat clean and prevents button spam.
 
 ## Available Files (load as needed)
 - `@docs/internal/marzban_api.json` - Marzban VPN API spec

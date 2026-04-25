@@ -9,6 +9,7 @@ export const envSchema = z.object({
   ADMIN_CHAT_ID: z.string(),
   CARD_NUMBER: z.string(),
   SUPPORT_USERNAME: z.string(),
+  SUB_BASE_URL: z.string().url(),
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
 });
