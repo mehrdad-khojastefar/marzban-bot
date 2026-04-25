@@ -1,4 +1,4 @@
-import { Scenes } from 'telegraf';
+import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_START, SCENE_HOME } from './constants';
 import { getMessage } from '../services/messageService';
@@ -48,9 +48,11 @@ startScene.enter(async (ctx) => {
     greeting += '\n\n' + welcomeMsg;
   }
 
-  // Send the greeting as a fresh message (this becomes the tracked message),
-  // then immediately enter HOME which will edit it with the menu.
-  const sent = await ctx.reply(greeting);
+  // Send greeting with persistent reply keyboard (start button below text area)
+  const sent = await ctx.reply(
+    greeting,
+    Markup.keyboard([['/start']]).resize(),
+  );
   ctx.session.lastBotMessageId = sent.message_id;
 
   await ctx.scene.enter(SCENE_HOME);
