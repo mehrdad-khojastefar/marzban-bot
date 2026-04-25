@@ -114,7 +114,14 @@ async function renderDetail(ctx: BotContext) {
   const isDisabled = marzbanStatus === 'disabled';
 
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [
-    [Markup.button.callback('📊 تغییر پلن / حجم', 'change_plan')],
+    [
+      Markup.button.callback('📊 تغییر پلن / حجم', 'change_plan'),
+      Markup.button.callback('⏰ تغییر انقضا', 'edit_expire'),
+    ],
+    [
+      Markup.button.callback('💰 تغییر قیمت', 'edit_price'),
+      Markup.button.callback('📝 ویرایش یادداشت', 'edit_note'),
+    ],
     [Markup.button.callback('🔄 ریست مصرف', 'reset_usage')],
     [
       Markup.button.callback(
@@ -216,43 +223,122 @@ adminViewAccountScene.action(/^switch_plan_(\d+)$/, async (ctx) => {
   await renderDetail(ctx);
 });
 
-// Per-unit data limit change via text
+// --- Edit expiry ---
+adminViewAccountScene.action('edit_expire', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminEditField = 'expire';
+  await sendOrEdit(
+    ctx,
+    'تعداد روز جدید از الان را وارد کنید:\n(مثلاً ۳۰ برای ۳۰ روز از الان)',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'cancel_edit')]]),
+  );
+});
+
+// --- Edit price ---
+adminViewAccountScene.action('edit_price', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminEditField = 'price';
+  await sendOrEdit(
+    ctx,
+    'قیمت جدید را به تومان وارد کنید:',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'cancel_edit')]]),
+  );
+});
+
+// --- Edit note ---
+adminViewAccountScene.action('edit_note', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminEditField = 'note';
+  await sendOrEdit(
+    ctx,
+    'یادداشت جدید را وارد کنید:',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'cancel_edit')]]),
+  );
+});
+
+// --- Text input handler for all edit fields ---
 adminViewAccountScene.on('text', async (ctx) => {
   const input = ctx.message.text.trim();
   const accountId = ctx.session.selectedAccountId;
-  if (!accountId) return;
+  if (!accountId || !ctx.session.adminEditField) return;
+
+  const db = getDb();
+  const account = await db.account.findUnique({
+    where: { id: accountId },
+    include: { seller_plan: true },
+  });
+  if (!account) return;
+
+  const backButton = Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'cancel_edit')]]);
 
   if (ctx.session.adminEditField === 'data_limit') {
     const quantity = parseFloat(input);
     if (isNaN(quantity) || quantity <= 0) {
-      await sendOrEdit(
-        ctx,
-        'عدد معتبر وارد کنید.',
-        Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'cancel_edit')]]),
-      );
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید.', backButton);
       return;
     }
 
-    const db = getDb();
-    const account = await db.account.findUnique({
-      where: { id: accountId },
-      include: { seller_plan: true },
-    });
-    if (!account || !account.seller_plan) return;
-
+    if (!account.seller_plan) return;
     const unitBytes = Number(account.seller_plan.data_limit);
     const unitPrice = account.seller_plan.price;
     const newDataLimit = Math.round(unitBytes * quantity);
     const newPrice = Math.round(unitPrice * quantity);
 
-    // Update Marzban
     const marzban = getMarzban();
     await marzban.modifyUser(account.marzban_username, { data_limit: newDataLimit });
-
-    // Update DB price
     await db.account.update({
       where: { id: accountId },
       data: { price: newPrice },
+    });
+
+    ctx.session.adminEditField = undefined;
+    await renderDetail(ctx);
+    return;
+  }
+
+  if (ctx.session.adminEditField === 'expire') {
+    const days = parseInt(input);
+    if (isNaN(days) || days <= 0) {
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید.', backButton);
+      return;
+    }
+
+    const newExpireTimestamp = Math.floor(Date.now() / 1000) + days * 24 * 60 * 60;
+    const newExpiresAt = new Date(newExpireTimestamp * 1000);
+
+    const marzban = getMarzban();
+    await marzban.modifyUser(account.marzban_username, { expire: newExpireTimestamp });
+    await db.account.update({
+      where: { id: accountId },
+      data: { expires_at: newExpiresAt },
+    });
+
+    ctx.session.adminEditField = undefined;
+    await renderDetail(ctx);
+    return;
+  }
+
+  if (ctx.session.adminEditField === 'price') {
+    const price = parseInt(input);
+    if (isNaN(price) || price < 0) {
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید.', backButton);
+      return;
+    }
+
+    await db.account.update({
+      where: { id: accountId },
+      data: { price },
+    });
+
+    ctx.session.adminEditField = undefined;
+    await renderDetail(ctx);
+    return;
+  }
+
+  if (ctx.session.adminEditField === 'note') {
+    await db.account.update({
+      where: { id: accountId },
+      data: { note: input || null },
     });
 
     ctx.session.adminEditField = undefined;

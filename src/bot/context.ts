@@ -17,7 +17,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   pendingPlanName?: string;
 
   // admin account management
-  adminEditField?: 'data_limit' | 'expire';
+  adminEditField?: 'data_limit' | 'expire' | 'price' | 'note';
 
   // admin seller management
   managingSellerId?: number;
