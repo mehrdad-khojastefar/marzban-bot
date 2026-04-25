@@ -48,9 +48,8 @@ startScene.enter(async (ctx) => {
     greeting += '\n\n' + welcomeMsg;
   }
 
-  // Send a single message with the reply keyboard — this becomes the tracked message
-  // that HOME will edit with inline buttons. The greeting is stored so HOME can prepend it.
-  const sent = await ctx.reply(greeting, Markup.keyboard([['🏠 منو اصلی']]).resize());
+  // Set persistent reply keyboard (won't be visible as a separate message — HOME edits it)
+  const sent = await ctx.reply('⏳', Markup.keyboard([['🏠 منو اصلی']]).resize());
   ctx.session.lastBotMessageId = sent.message_id;
   ctx.session.greeting = greeting;
 
