@@ -22,7 +22,13 @@ homeScene.enter(async (ctx) => {
   const db = getDb();
   const env = loadEnv();
 
-  const msg = await getMessage('home.greeting');
+  let msg = await getMessage('home.greeting');
+
+  // Prepend greeting from /start if present
+  if (ctx.session.greeting) {
+    msg = ctx.session.greeting + '\n\n' + msg;
+    ctx.session.greeting = undefined;
+  }
 
   // Sellers only see the seller panel button
   const seller = await db.seller.findUnique({ where: { chat_id: chatId } });

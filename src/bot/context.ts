@@ -3,6 +3,7 @@ import { Context, Scenes } from 'telegraf';
 export interface SessionData extends Scenes.SceneSessionData {
   lastBotMessageId?: number;
   userId?: number;
+  greeting?: string;
   selectedPlanId?: number;
   pendingPaymentId?: number;
   selectedAccountId?: number;
