@@ -84,26 +84,20 @@ async function provisionAccount(
     });
 
     const notePrompt = await getMessage('seller.enter_note');
+    const env = loadEnv();
+
+    let configText = '';
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
+    configText += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+    if (marzbanUser.links && marzbanUser.links.length > 0) {
+      configText += `\n\n📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`;
+    }
 
     await sendOrEdit(
       ctx,
-      `${successMsg}\nقیمت: ${formatPrice(price)}\n\n${notePrompt}`,
+      `${successMsg}\nقیمت: ${formatPrice(price)}${configText}\n\n${notePrompt}`,
       Markup.inlineKeyboard([[Markup.button.callback('⏭ رد کردن', 'skip_note')]]),
     );
-
-    // Config links sent as separate message (exception)
-    const configCaption = await getMessage('view.config_caption');
-    const env = loadEnv();
-    const parts: string[] = [];
-
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
-    parts.push(`🔗 لینک اشتراک:\n${subUrl}`);
-
-    if (marzbanUser.links && marzbanUser.links.length > 0) {
-      parts.push(`📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`);
-    }
-
-    await ctx.reply(`${configCaption}\n\n${parts.join('\n\n')}`);
   } catch (err) {
     console.error('Seller account provisioning failed:', err);
     const failMsg = await getMessage('seller.create_failed');

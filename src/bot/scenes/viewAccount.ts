@@ -60,42 +60,21 @@ viewAccountScene.enter(async (ctx) => {
     text += `\n\n${expiredMsg}`;
   }
 
-  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
-
+  // Add config links inline
   if (!isExpired) {
-    buttons.push([Markup.button.callback('📋 دریافت کانفیگ', 'get_config')]);
+    const env = loadEnv();
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, account.marzban_username);
+    text += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+    if (marzbanUser.links && marzbanUser.links.length > 0) {
+      text += `\n\n📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`;
+    }
   }
 
-  buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
-
-  await sendOrEdit(ctx, text, Markup.inlineKeyboard(buttons));
-});
-
-viewAccountScene.action('get_config', async (ctx) => {
-  await ctx.answerCbQuery();
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) return;
-
-  const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
-
-  const marzban = getMarzban();
-  const marzbanUser = await marzban.getUser(account.marzban_username);
-
-  const caption = await getMessage('view.config_caption');
-  const env = loadEnv();
-  const parts: string[] = [];
-
-  const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, account.marzban_username);
-  parts.push(`🔗 لینک اشتراک:\n${subUrl}`);
-
-  if (marzbanUser.links && marzbanUser.links.length > 0) {
-    parts.push(`📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`);
-  }
-
-  // Config links are sent as a separate message (exception to single-message rule)
-  await ctx.reply(`${caption}\n\n${parts.join('\n\n')}`);
+  await sendOrEdit(
+    ctx,
+    text,
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+  );
 });
 
 viewAccountScene.action('back', async (ctx) => {

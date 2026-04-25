@@ -40,11 +40,15 @@ async function renderDetail(ctx: BotContext) {
   const marzban = getMarzban();
   let usedTraffic = 0;
   let marzbanStatus = 'active';
+  let marzbanProxies: Record<string, unknown> = {};
+  let marzbanLinks: string[] = [];
 
   try {
     const marzbanUser = await marzban.getUser(account.marzban_username);
     usedTraffic = marzbanUser.used_traffic;
     marzbanStatus = marzbanUser.status;
+    marzbanProxies = marzbanUser.proxies;
+    marzbanLinks = marzbanUser.links ?? [];
   } catch {
     // If Marzban unreachable, show with zeros
   }
@@ -79,7 +83,7 @@ async function renderDetail(ctx: BotContext) {
     }),
   );
 
-  const text =
+  let text =
     `${title}\n\n` +
     `📛 نام: ${account.marzban_username}\n` +
     `📋 پلن: ${planName}\n` +
@@ -90,8 +94,15 @@ async function renderDetail(ctx: BotContext) {
     `💰 پرداخت: ${paymentText}\n` +
     `📝 یادداشت: ${noteText}`;
 
+  // Include subscription link inline
+  const env = loadEnv();
+  const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanProxies, account.marzban_username);
+  text += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+  if (marzbanLinks.length > 0) {
+    text += `\n\n📋 لینک‌های مستقیم:\n${marzbanLinks.join('\n')}`;
+  }
+
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [
-    [Markup.button.callback('📎 ارسال لینک اشتراک', 'send_sub_link')],
     [Markup.button.callback('✏️ ویرایش یادداشت', 'edit_note')],
     [Markup.button.callback('🔙 بازگشت', 'back_accounts')],
   ];
@@ -101,36 +112,6 @@ async function renderDetail(ctx: BotContext) {
 
 sellerViewAccountScene.enter(async (ctx) => {
   await renderDetail(ctx);
-});
-
-sellerViewAccountScene.action('send_sub_link', async (ctx) => {
-  await ctx.answerCbQuery();
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) return;
-
-  const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
-
-  const marzban = getMarzban();
-  try {
-    const marzbanUser = await marzban.getUser(account.marzban_username);
-    const caption = await getMessage('view.config_caption');
-    const env = loadEnv();
-    const parts: string[] = [];
-
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, account.marzban_username);
-    parts.push(`🔗 لینک اشتراک:\n${subUrl}`);
-
-    if (marzbanUser.links && marzbanUser.links.length > 0) {
-      parts.push(`📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`);
-    }
-
-    // Config links sent as separate message (exception)
-    await ctx.reply(`${caption}\n\n${parts.join('\n\n')}`);
-  } catch {
-    await ctx.reply('خطا در دریافت لینک اشتراک.');
-  }
 });
 
 sellerViewAccountScene.action('edit_note', async (ctx) => {

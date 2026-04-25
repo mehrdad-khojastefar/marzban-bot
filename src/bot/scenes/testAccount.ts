@@ -69,25 +69,20 @@ testAccountScene.enter(async (ctx) => {
     await db.user.update({ where: { id: user.id }, data: { has_test: true } });
 
     const readyMsg = await getMessage('test.ready');
-    await sendOrEdit(
-      ctx,
-      readyMsg + '\n\n⏰ مدت: ۱ ساعت\n📊 حجم: ۱۰۰ مگابایت',
-      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
-    );
-
-    // Config links sent as separate message (exception)
     const env = loadEnv();
-    const configCaption = await getMessage('view.config_caption');
-    const parts: string[] = [];
 
+    let configText = '';
     const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
-    parts.push(`🔗 لینک اشتراک:\n${subUrl}`);
-
+    configText += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
     if (marzbanUser.links && marzbanUser.links.length > 0) {
-      parts.push(`📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`);
+      configText += `\n\n📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`;
     }
 
-    await ctx.reply(`${configCaption}\n\n${parts.join('\n\n')}`);
+    await sendOrEdit(
+      ctx,
+      readyMsg + '\n\n⏰ مدت: ۱ ساعت\n📊 حجم: ۱۰۰ مگابایت' + configText,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
   } catch (err) {
     console.error('Test account provisioning failed:', err);
     const failMsg = await getMessage('test.failed');
