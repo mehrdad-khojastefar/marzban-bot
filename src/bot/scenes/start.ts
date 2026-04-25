@@ -48,13 +48,10 @@ startScene.enter(async (ctx) => {
     greeting += '\n\n' + welcomeMsg;
   }
 
-  // Sellers get seller panel button, everyone else gets main menu
-  const isSeller = seller?.is_active ?? false;
-  const keyboard = isSeller
-    ? Markup.keyboard([['🏪 پنل فروشنده']]).resize()
-    : Markup.keyboard([['🏠 منو اصلی']]).resize();
-
-  const sent = await ctx.reply(greeting, keyboard);
+  const sent = await ctx.reply(
+    greeting,
+    Markup.keyboard([['🏠 منو اصلی']]).resize(),
+  );
   ctx.session.lastBotMessageId = sent.message_id;
 
   await ctx.scene.enter(SCENE_HOME);

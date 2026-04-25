@@ -24,6 +24,21 @@ homeScene.enter(async (ctx) => {
 
   const msg = await getMessage('home.greeting');
 
+  // Sellers only see the seller panel button
+  const seller = await db.seller.findUnique({ where: { chat_id: chatId } });
+  if (seller && seller.is_active) {
+    const buttons: ReturnType<typeof Markup.button.callback>[][] = [
+      [Markup.button.callback('🏪 پنل فروشنده', 'seller_panel')],
+    ];
+    // Admin sellers can also manage sellers
+    if (String(chatId) === env.ADMIN_CHAT_ID) {
+      buttons.push([Markup.button.callback('⚙️ مدیریت فروشندگان', 'admin_sellers')]);
+    }
+    await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
+    return;
+  }
+
+  // Regular users see all buttons
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [
     [Markup.button.callback('مدیریت اکانت‌ها', 'manage_accounts')],
     [
@@ -33,13 +48,7 @@ homeScene.enter(async (ctx) => {
     [Markup.button.callback('پشتیبانی', 'support')],
   ];
 
-  // Seller button — only if user is an active seller
-  const seller = await db.seller.findUnique({ where: { chat_id: chatId } });
-  if (seller && seller.is_active) {
-    buttons.push([Markup.button.callback('🏪 پنل فروشنده', 'seller_panel')]);
-  }
-
-  // Admin button — only if user is admin
+  // Admin button
   if (String(chatId) === env.ADMIN_CHAT_ID) {
     buttons.push([Markup.button.callback('⚙️ مدیریت فروشندگان', 'admin_sellers')]);
   }

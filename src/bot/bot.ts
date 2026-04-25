@@ -6,7 +6,7 @@ import { initDb } from '../core/db';
 import { initMarzban } from '../core/marzban';
 import { initMessageService } from './services/messageService';
 import { initSettingService } from './services/settingService';
-import { createStage, SCENE_START, SCENE_SELLER_PANEL } from './scenes';
+import { createStage, SCENE_START } from './scenes';
 import { errorHandler } from './middlewares';
 import { registerAdminPaymentHandler } from './handlers';
 
@@ -37,8 +37,6 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
 
   bot.command('start', (ctx) => ctx.scene.enter(SCENE_START));
   bot.hears('🏠 منو اصلی', (ctx) => ctx.scene.enter(SCENE_START));
-  bot.hears('🏪 پنل فروشنده', (ctx) => ctx.scene.enter(SCENE_SELLER_PANEL));
-
   registerAdminPaymentHandler(bot);
 
   return bot;
