@@ -21,14 +21,39 @@ function formatJalaliDate(date: Date): string {
   );
 }
 
-async function provisionAccount(
-  ctx: BotContext,
-  dataLimit: number,
-  price: number,
-  planId: number,
-  planName: string,
-) {
+async function showConfirmation(ctx: BotContext) {
+  const dataLimit = ctx.session.pendingDataLimit!;
+  const price = ctx.session.pendingPrice!;
+  const planName = ctx.session.pendingPlanName!;
+  const expiresAt = new Date(Date.now() + SELLER_ACCOUNT_DURATION_DAYS * 24 * 60 * 60 * 1000);
+
+  const text =
+    `⚠️ تأیید ساخت اکانت\n\n` +
+    `📋 پلن: ${planName}\n` +
+    `📊 حجم: ${formatBytes(dataLimit)}\n` +
+    `💰 قیمت: ${formatPrice(price)}\n` +
+    `⏰ انقضا: ${formatJalaliDate(expiresAt)}\n` +
+    `📅 مدت: ${toPersianDigits('30')} روز\n\n` +
+    `آیا مطمئن هستید؟`;
+
+  await sendOrEdit(
+    ctx,
+    text,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✅ تأیید و ساخت', 'confirm_create'),
+        Markup.button.callback('❌ انصراف', 'back_plans'),
+      ],
+    ]),
+  );
+}
+
+async function provisionAccount(ctx: BotContext) {
   const sellerId = ctx.session.sellerId!;
+  const dataLimit = ctx.session.pendingDataLimit!;
+  const price = ctx.session.pendingPrice!;
+  const planId = ctx.session.selectedSellerPlanId!;
+  const planName = ctx.session.pendingPlanName!;
   const db = getDb();
 
   const seller = await db.seller.findUnique({ where: { id: sellerId } });
@@ -122,6 +147,9 @@ sellerCreateAccountScene.enter(async (ctx) => {
 
   ctx.session.awaitingQuantity = false;
   ctx.session.selectedSellerPlanId = undefined;
+  ctx.session.pendingDataLimit = undefined;
+  ctx.session.pendingPrice = undefined;
+  ctx.session.pendingPlanName = undefined;
 
   const db = getDb();
   const seller = await db.seller.findUnique({ where: { id: sellerId } });
@@ -174,11 +202,11 @@ sellerCreateAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
     return;
   }
 
-  if (plan.type === 'per_unit') {
-    // Ask for quantity
-    ctx.session.selectedSellerPlanId = plan.id;
-    ctx.session.awaitingQuantity = true;
+  ctx.session.selectedSellerPlanId = plan.id;
+  ctx.session.pendingPlanName = plan.name;
 
+  if (plan.type === 'per_unit') {
+    ctx.session.awaitingQuantity = true;
     const unitSize = formatBytes(Number(plan.data_limit));
     const unitPrice = formatPrice(plan.price);
     await sendOrEdit(
@@ -189,20 +217,23 @@ sellerCreateAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
     return;
   }
 
-  // Fixed plan — provision immediately
-  await provisionAccount(
-    ctx,
-    Number(plan.data_limit),
-    plan.price,
-    plan.id,
-    plan.name,
-  );
+  // Fixed plan — show confirmation
+  ctx.session.pendingDataLimit = Number(plan.data_limit);
+  ctx.session.pendingPrice = plan.price;
+  await showConfirmation(ctx);
+});
+
+sellerCreateAccountScene.action('confirm_create', async (ctx) => {
+  await ctx.answerCbQuery();
+  await provisionAccount(ctx);
 });
 
 sellerCreateAccountScene.action('back_plans', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.awaitingQuantity = false;
   ctx.session.selectedSellerPlanId = undefined;
+  ctx.session.pendingDataLimit = undefined;
+  ctx.session.pendingPrice = undefined;
   await ctx.scene.enter(SCENE_SELLER_CREATE_ACCOUNT);
 });
 
@@ -235,10 +266,10 @@ sellerCreateAccountScene.on('text', async (ctx) => {
       return;
     }
 
-    const totalData = Math.round(Number(plan.data_limit) * quantity);
-    const totalPrice = Math.round(plan.price * quantity);
-
-    await provisionAccount(ctx, totalData, totalPrice, plan.id, plan.name);
+    ctx.session.awaitingQuantity = false;
+    ctx.session.pendingDataLimit = Math.round(Number(plan.data_limit) * quantity);
+    ctx.session.pendingPrice = Math.round(plan.price * quantity);
+    await showConfirmation(ctx);
     return;
   }
 

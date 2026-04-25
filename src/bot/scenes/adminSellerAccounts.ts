@@ -1,7 +1,7 @@
 import { Scenes, Markup } from 'telegraf';
 import { Prisma } from '@prisma/client';
 import { BotContext } from '../context';
-import { SCENE_ADMIN_SELLER_ACCOUNTS, SCENE_ADMIN_SELLER_DETAIL } from './constants';
+import { SCENE_ADMIN_SELLER_ACCOUNTS, SCENE_ADMIN_SELLER_DETAIL, SCENE_ADMIN_VIEW_ACCOUNT } from './constants';
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
@@ -80,19 +80,19 @@ async function renderAccountList(ctx: BotContext) {
     const isPaid = account.payment_status === 'paid';
     const isSelected = selected.includes(account.id);
     const checkbox = isPaid ? '✅' : isSelected ? '☑️' : '☐';
-    const planData = account.seller_plan
-      ? formatBytes(Number(account.seller_plan.data_limit))
-      : '—';
     const price = account.price ? formatPrice(account.price) : '—';
     const statusIcon = isPaid ? '✅' : '⬜';
 
-    const label = `${checkbox} ${account.marzban_username} - ${planData} - ${price} ${statusIcon}`;
+    const label = `${checkbox} ${account.marzban_username} - ${price} ${statusIcon}`;
 
+    const row: ReturnType<typeof Markup.button.callback>[] = [];
     if (isPaid) {
-      buttons.push([Markup.button.callback(label, `noop_${account.id}`)]);
+      row.push(Markup.button.callback(label, `noop_${account.id}`));
     } else {
-      buttons.push([Markup.button.callback(label, `toggle_${account.id}`)]);
+      row.push(Markup.button.callback(label, `toggle_${account.id}`));
     }
+    row.push(Markup.button.callback('🔧', `manage_${account.id}`));
+    buttons.push(row);
   }
 
   // Selection summary
@@ -259,6 +259,12 @@ adminSellerAccountsScene.action('next_page', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.currentPage = (ctx.session.currentPage ?? 0) + 1;
   await renderAccountList(ctx);
+});
+
+adminSellerAccountsScene.action(/^manage_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.selectedAccountId = parseInt(ctx.match[1]);
+  await ctx.scene.enter(SCENE_ADMIN_VIEW_ACCOUNT);
 });
 
 adminSellerAccountsScene.action(/^noop/, async (ctx) => {

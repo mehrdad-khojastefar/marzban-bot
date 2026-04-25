@@ -12,6 +12,12 @@ export interface SessionData extends Scenes.SceneSessionData {
   sellerId?: number;
   selectedSellerPlanId?: number;
   awaitingQuantity?: boolean;
+  pendingDataLimit?: number;
+  pendingPrice?: number;
+  pendingPlanName?: string;
+
+  // admin account management
+  adminEditField?: 'data_limit' | 'expire';
 
   // admin seller management
   managingSellerId?: number;

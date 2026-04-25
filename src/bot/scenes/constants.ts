@@ -20,3 +20,4 @@ export const SCENE_ADMIN_SELLERS = 'scene:admin_sellers';
 export const SCENE_ADMIN_SELLER_DETAIL = 'scene:admin_seller_detail';
 export const SCENE_ADMIN_SELLER_PLANS = 'scene:admin_seller_plans';
 export const SCENE_ADMIN_SELLER_ACCOUNTS = 'scene:admin_seller_accounts';
+export const SCENE_ADMIN_VIEW_ACCOUNT = 'scene:admin_view_account';
