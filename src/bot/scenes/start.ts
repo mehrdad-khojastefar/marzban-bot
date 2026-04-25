@@ -51,7 +51,7 @@ startScene.enter(async (ctx) => {
   // Send greeting with persistent reply keyboard (start button below text area)
   const sent = await ctx.reply(
     greeting,
-    Markup.keyboard([['/start']]).resize(),
+    Markup.keyboard([['🏠 منو اصلی']]).resize(),
   );
   ctx.session.lastBotMessageId = sent.message_id;
 

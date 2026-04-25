@@ -36,6 +36,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   bot.use(stage.middleware());
 
   bot.command('start', (ctx) => ctx.scene.enter(SCENE_START));
+  bot.hears('🏠 منو اصلی', (ctx) => ctx.scene.enter(SCENE_START));
 
   registerAdminPaymentHandler(bot);
 
