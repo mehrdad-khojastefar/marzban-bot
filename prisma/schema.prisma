@@ -24,6 +24,11 @@ enum AccountPaymentStatus {
   paid
 }
 
+enum SellerPlanType {
+  fixed
+  per_unit
+}
+
 model User {
   id         Int       @id @default(autoincrement())
   chat_id    BigInt    @unique
@@ -62,6 +67,7 @@ model Account {
   marzban_username String
   type             AccountType
   payment_status   AccountPaymentStatus?
+  price            Int?
   note             String?
   expires_at       DateTime
   created_at       DateTime              @default(now())
@@ -113,9 +119,10 @@ model Seller {
 }
 
 model SellerPlan {
-  id         Int       @id @default(autoincrement())
+  id         Int            @id @default(autoincrement())
   seller_id  Int
   name       String
+  type       SellerPlanType @default(fixed)
   data_limit BigInt
   price      Int
   is_active  Boolean   @default(true)

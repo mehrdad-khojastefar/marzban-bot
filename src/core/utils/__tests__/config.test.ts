@@ -10,6 +10,7 @@ const validEnv = {
   ADMIN_CHAT_ID: '12345',
   CARD_NUMBER: '6037-xxxx',
   SUPPORT_USERNAME: '@support',
+  SUB_BASE_URL: 'https://sub.example.com',
 };
 
 describe('loadEnv', () => {

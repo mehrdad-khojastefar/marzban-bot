@@ -10,6 +10,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   // seller flows
   sellerId?: number;
   selectedSellerPlanId?: number;
+  awaitingQuantity?: boolean;
 
   // admin seller management
   managingSellerId?: number;

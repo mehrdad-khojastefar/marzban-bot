@@ -41,7 +41,7 @@ async function renderSellerList(ctx: BotContext) {
   for (const seller of sellers) {
     const debt = seller.accounts
       .filter((a) => a.payment_status === 'unpaid')
-      .reduce((sum, a) => sum + (a.seller_plan?.price ?? 0), 0);
+      .reduce((sum, a) => sum + (a.price ?? 0), 0);
 
     let label: string;
     if (seller.user) {

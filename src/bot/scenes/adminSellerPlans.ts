@@ -1,4 +1,5 @@
 import { Scenes, Markup } from 'telegraf';
+import { SellerPlanType } from '@prisma/client';
 import { BotContext } from '../context';
 import { SCENE_ADMIN_SELLER_PLANS, SCENE_ADMIN_SELLER_DETAIL } from './constants';
 import { getMessage } from '../services/messageService';
@@ -6,9 +7,10 @@ import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice, formatBytes, toPersianDigits } from '../../core/utils/format';
 
-type AddPlanStep = 'idle' | 'name' | 'data' | 'price';
+type AddPlanStep = 'idle' | 'type' | 'name' | 'data' | 'price';
 
 interface PlanDraft {
+  type?: SellerPlanType;
   name?: string;
   data_limit?: bigint;
 }
@@ -60,13 +62,19 @@ async function renderPlanList(ctx: BotContext) {
   const lines = plans.map((plan, i) => {
     const num = toPersianDigits(String(i + 1));
     const statusIcon = plan.is_active ? '✅' : '❌ غیرفعال';
-    return `${num}. ${plan.name} - ${formatPrice(plan.price)} ${statusIcon}`;
+    const typeLabel = plan.type === 'per_unit' ? '(واحدی)' : '(ثابت)';
+    const priceLabel =
+      plan.type === 'per_unit'
+        ? `هر ${formatBytes(Number(plan.data_limit))} = ${formatPrice(plan.price)}`
+        : `${formatBytes(Number(plan.data_limit))} - ${formatPrice(plan.price)}`;
+    return `${num}. ${plan.name} ${typeLabel} - ${priceLabel} ${statusIcon}`;
   });
 
   for (const plan of plans) {
     const statusIcon = plan.is_active ? '✅' : '❌';
+    const typeIcon = plan.type === 'per_unit' ? '📏' : '📦';
     buttons.push([
-      Markup.button.callback(`${plan.name} ${statusIcon}`, `plan_${plan.id}`),
+      Markup.button.callback(`${typeIcon} ${plan.name} ${statusIcon}`, `plan_${plan.id}`),
     ]);
   }
 
@@ -88,8 +96,35 @@ adminSellerPlansScene.enter(async (ctx) => {
 
 adminSellerPlansScene.action('add_plan', async (ctx) => {
   await ctx.answerCbQuery();
-  addPlanStep = 'name';
+  addPlanStep = 'type';
   planDraft = {};
+  await sendOrEdit(
+    ctx,
+    'نوع پلن را انتخاب کنید:',
+    Markup.inlineKeyboard([
+      [Markup.button.callback('📦 ثابت (مثلاً ۵ گیگ ۴۵۰ تومان)', 'type_fixed')],
+      [Markup.button.callback('📏 واحدی (مثلاً هر ۱ گیگ ۲۰۰ تومان)', 'type_per_unit')],
+      [Markup.button.callback('🔙 بازگشت', 'back_list')],
+    ]),
+  );
+});
+
+adminSellerPlansScene.action('type_fixed', async (ctx) => {
+  await ctx.answerCbQuery();
+  planDraft.type = 'fixed';
+  addPlanStep = 'name';
+  const msg = await getMessage('admin.plan_name_prompt');
+  await sendOrEdit(
+    ctx,
+    msg,
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
+  );
+});
+
+adminSellerPlansScene.action('type_per_unit', async (ctx) => {
+  await ctx.answerCbQuery();
+  planDraft.type = 'per_unit';
+  addPlanStep = 'name';
   const msg = await getMessage('admin.plan_name_prompt');
   await sendOrEdit(
     ctx,
@@ -104,10 +139,13 @@ adminSellerPlansScene.on('text', async (ctx) => {
   if (addPlanStep === 'name') {
     planDraft.name = input;
     addPlanStep = 'data';
-    const msg = await getMessage('admin.plan_data_prompt');
+    const prompt =
+      planDraft.type === 'per_unit'
+        ? 'اندازه هر واحد را به گیگابایت وارد کنید (مثلاً ۱):'
+        : await getMessage('admin.plan_data_prompt');
     await sendOrEdit(
       ctx,
-      msg,
+      prompt,
       Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
     );
     return;
@@ -125,10 +163,13 @@ adminSellerPlansScene.on('text', async (ctx) => {
     }
     planDraft.data_limit = BigInt(Math.round(gb * 1073741824));
     addPlanStep = 'price';
-    const msg = await getMessage('admin.plan_price_prompt');
+    const prompt =
+      planDraft.type === 'per_unit'
+        ? `قیمت هر واحد (${formatBytes(Number(planDraft.data_limit))}) را به تومان وارد کنید:`
+        : await getMessage('admin.plan_price_prompt');
     await sendOrEdit(
       ctx,
-      msg,
+      prompt,
       Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
     );
     return;
@@ -146,7 +187,7 @@ adminSellerPlansScene.on('text', async (ctx) => {
     }
 
     const sellerId = ctx.session.managingSellerId;
-    if (!sellerId || !planDraft.name || !planDraft.data_limit) {
+    if (!sellerId || !planDraft.name || !planDraft.data_limit || !planDraft.type) {
       addPlanStep = 'idle';
       return;
     }
@@ -156,6 +197,7 @@ adminSellerPlansScene.on('text', async (ctx) => {
       data: {
         seller_id: sellerId,
         name: planDraft.name,
+        type: planDraft.type,
         data_limit: planDraft.data_limit,
         price,
       },
@@ -178,10 +220,17 @@ adminSellerPlansScene.action(/^plan_(\d+)$/, async (ctx) => {
   if (!plan) return;
 
   const dataDisplay = formatBytes(Number(plan.data_limit));
+  const typeLabel = plan.type === 'per_unit' ? 'واحدی' : 'ثابت';
+  const priceLabel =
+    plan.type === 'per_unit'
+      ? `هر ${dataDisplay} = ${formatPrice(plan.price)}`
+      : formatPrice(plan.price);
+
   const text =
     `پلن: ${plan.name}\n` +
+    `نوع: ${typeLabel}\n` +
     `حجم: ${dataDisplay}\n` +
-    `قیمت: ${formatPrice(plan.price)}\n` +
+    `قیمت: ${priceLabel}\n` +
     `وضعیت: ${plan.is_active ? 'فعال' : 'غیرفعال'}`;
 
   const toggleLabel = plan.is_active ? '❌ غیرفعال کردن' : '✅ فعال کردن';

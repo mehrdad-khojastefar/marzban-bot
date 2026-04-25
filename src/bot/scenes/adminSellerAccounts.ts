@@ -83,7 +83,7 @@ async function renderAccountList(ctx: BotContext) {
     const planData = account.seller_plan
       ? formatBytes(Number(account.seller_plan.data_limit))
       : '—';
-    const price = account.seller_plan ? formatPrice(account.seller_plan.price) : '—';
+    const price = account.price ? formatPrice(account.price) : '—';
     const statusIcon = isPaid ? '✅' : '⬜';
 
     const label = `${checkbox} ${account.marzban_username} - ${planData} - ${price} ${statusIcon}`;
@@ -102,7 +102,7 @@ async function renderAccountList(ctx: BotContext) {
       include: { seller_plan: true },
     });
     const selectedTotal = selectedAccounts.reduce(
-      (sum, a) => sum + (a.seller_plan?.price ?? 0),
+      (sum, a) => sum + (a.price ?? 0),
       0,
     );
 

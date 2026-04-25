@@ -20,7 +20,6 @@ sellerReportScene.enter(async (ctx) => {
 
   const allAccounts = await db.account.findMany({
     where: { seller_id: sellerId },
-    include: { seller_plan: true },
   });
 
   const total = allAccounts.length;
@@ -31,7 +30,7 @@ sellerReportScene.enter(async (ctx) => {
   let paidAmount = 0;
 
   for (const account of allAccounts) {
-    const price = account.seller_plan?.price ?? 0;
+    const price = account.price ?? 0;
     totalAmount += price;
     if (account.payment_status === 'paid') {
       paidAmount += price;

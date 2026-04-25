@@ -43,7 +43,7 @@ async function renderDetail(ctx: BotContext) {
   const activeAccounts = seller.accounts.filter((a) => a.expires_at > now).length;
   const debt = seller.accounts
     .filter((a) => a.payment_status === 'unpaid')
-    .reduce((sum, a) => sum + (a.seller_plan?.price ?? 0), 0);
+    .reduce((sum, a) => sum + (a.price ?? 0), 0);
 
   let infoLines: string;
   if (seller.user) {
