@@ -1,6 +1,10 @@
 import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
-import { SCENE_ADMIN_VIEW_ACCOUNT, SCENE_ADMIN_SELLER_ACCOUNTS } from './constants';
+import {
+  SCENE_ADMIN_VIEW_ACCOUNT,
+  SCENE_ADMIN_SELLER_ACCOUNTS,
+  SCENE_ADMIN_ACCOUNTS,
+} from './constants';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
@@ -15,6 +19,12 @@ import {
 } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
+function getBackScene(ctx: BotContext): string {
+  return ctx.session.adminAccountsFrom === 'global'
+    ? SCENE_ADMIN_ACCOUNTS
+    : SCENE_ADMIN_SELLER_ACCOUNTS;
+}
+
 export const adminViewAccountScene = new Scenes.BaseScene<BotContext>(
   SCENE_ADMIN_VIEW_ACCOUNT,
 );
@@ -22,7 +32,7 @@ export const adminViewAccountScene = new Scenes.BaseScene<BotContext>(
 async function renderDetail(ctx: BotContext) {
   const accountId = ctx.session.selectedAccountId;
   if (!accountId) {
-    await ctx.scene.enter(SCENE_ADMIN_SELLER_ACCOUNTS);
+    await ctx.scene.enter(getBackScene(ctx));
     return;
   }
 
@@ -35,7 +45,7 @@ async function renderDetail(ctx: BotContext) {
   });
 
   if (!account) {
-    await ctx.scene.enter(SCENE_ADMIN_SELLER_ACCOUNTS);
+    await ctx.scene.enter(getBackScene(ctx));
     return;
   }
 

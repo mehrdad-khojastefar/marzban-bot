@@ -264,6 +264,7 @@ adminSellerAccountsScene.action('next_page', async (ctx) => {
 adminSellerAccountsScene.action(/^manage_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.selectedAccountId = parseInt(ctx.match[1]);
+  ctx.session.adminAccountsFrom = 'seller';
   await ctx.scene.enter(SCENE_ADMIN_VIEW_ACCOUNT);
 });
 

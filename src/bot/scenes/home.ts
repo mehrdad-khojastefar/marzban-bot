@@ -8,6 +8,7 @@ import {
   SCENE_SUPPORT,
   SCENE_SELLER_PANEL,
   SCENE_ADMIN_SELLERS,
+  SCENE_ADMIN_ACCOUNTS,
 } from './constants';
 import { getMessage } from '../services/messageService';
 import { getSetting } from '../services/settingService';
@@ -30,17 +31,31 @@ homeScene.enter(async (ctx) => {
     ctx.session.greeting = undefined;
   }
 
+  const isAdmin = String(chatId) === env.ADMIN_CHAT_ID;
+
+  // Admin sees only admin panel
+  if (isAdmin) {
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('👥 مدیریت فروشندگان', 'admin_sellers')],
+        [Markup.button.callback('📋 مدیریت اکانت‌ها', 'admin_accounts')],
+      ]),
+    );
+    return;
+  }
+
   // Sellers only see the seller panel button
   const seller = await db.seller.findUnique({ where: { chat_id: chatId } });
   if (seller && seller.is_active) {
-    const buttons: ReturnType<typeof Markup.button.callback>[][] = [
-      [Markup.button.callback('🏪 پنل فروشنده', 'seller_panel')],
-    ];
-    // Admin sellers can also manage sellers
-    if (String(chatId) === env.ADMIN_CHAT_ID) {
-      buttons.push([Markup.button.callback('⚙️ مدیریت فروشندگان', 'admin_sellers')]);
-    }
-    await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🏪 پنل فروشنده', 'seller_panel')],
+      ]),
+    );
     return;
   }
 
@@ -53,11 +68,6 @@ homeScene.enter(async (ctx) => {
     ],
     [Markup.button.callback('پشتیبانی', 'support')],
   ];
-
-  // Admin button
-  if (String(chatId) === env.ADMIN_CHAT_ID) {
-    buttons.push([Markup.button.callback('⚙️ مدیریت فروشندگان', 'admin_sellers')]);
-  }
 
   await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
@@ -96,4 +106,9 @@ homeScene.action('seller_panel', async (ctx) => {
 homeScene.action('admin_sellers', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.scene.enter(SCENE_ADMIN_SELLERS);
+});
+
+homeScene.action('admin_accounts', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_ACCOUNTS);
 });
