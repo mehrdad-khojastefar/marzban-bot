@@ -105,11 +105,12 @@ model BotMessage {
 }
 
 model Seller {
-  id         Int          @id @default(autoincrement())
-  chat_id    BigInt       @unique
-  user_id    Int?         @unique
-  note       String?
-  is_active  Boolean      @default(true)
+  id          Int          @id @default(autoincrement())
+  chat_id     BigInt       @unique
+  user_id     Int?         @unique
+  note        String?
+  link_prefix String?
+  is_active   Boolean      @default(true)
   created_at DateTime     @default(now())
   user       User?        @relation(fields: [user_id], references: [id])
   plans      SellerPlan[]

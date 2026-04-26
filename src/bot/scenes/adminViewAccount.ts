@@ -119,7 +119,8 @@ async function renderDetail(ctx: BotContext) {
     `🔗 لینک اشتراک:\n${subUrl}`;
 
   if (marzbanLinks.length > 0) {
-    const renamed = renameConfigLinks(marzbanLinks, env.CONFIG_LINK_PREFIX, account.marzban_username);
+    const linkPrefix = account.seller?.link_prefix ?? env.CONFIG_LINK_PREFIX;
+    const renamed = renameConfigLinks(marzbanLinks, linkPrefix, account.marzban_username);
     text += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
   }
 

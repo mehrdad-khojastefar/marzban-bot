@@ -30,7 +30,7 @@ async function renderDetail(ctx: BotContext) {
   const db = getDb();
   const account = await db.account.findUnique({
     where: { id: accountId },
-    include: { seller_plan: true },
+    include: { seller_plan: true, seller: true },
   });
 
   if (!account) {
@@ -100,7 +100,8 @@ async function renderDetail(ctx: BotContext) {
   const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanProxies, account.marzban_username);
   text += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
   if (marzbanLinks.length > 0) {
-    const renamed = renameConfigLinks(marzbanLinks, env.CONFIG_LINK_PREFIX, account.marzban_username);
+    const linkPrefix = account.seller?.link_prefix ?? env.CONFIG_LINK_PREFIX;
+    const renamed = renameConfigLinks(marzbanLinks, linkPrefix, account.marzban_username);
     text += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
   }
 

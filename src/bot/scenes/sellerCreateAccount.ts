@@ -115,7 +115,8 @@ async function provisionAccount(ctx: BotContext) {
     const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
     configText += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
     if (marzbanUser.links && marzbanUser.links.length > 0) {
-      const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, marzbanUsername);
+      const linkPrefix = seller.link_prefix ?? env.CONFIG_LINK_PREFIX;
+      const renamed = renameConfigLinks(marzbanUser.links, linkPrefix, marzbanUsername);
       configText += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
     }
 

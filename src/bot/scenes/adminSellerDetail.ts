@@ -10,12 +10,14 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice, toPersianDigits } from '../../core/utils/format';
+import { loadEnv } from '../../core/utils/config';
 
 export const adminSellerDetailScene = new Scenes.BaseScene<BotContext>(
   SCENE_ADMIN_SELLER_DETAIL,
 );
 
 async function renderDetail(ctx: BotContext) {
+  ctx.session.sellerEditField = undefined;
   const sellerId = ctx.session.managingSellerId;
   if (!sellerId) {
     await ctx.scene.enter(SCENE_ADMIN_SELLERS);
@@ -45,6 +47,9 @@ async function renderDetail(ctx: BotContext) {
     .filter((a) => a.payment_status === 'unpaid')
     .reduce((sum, a) => sum + (a.price ?? 0), 0);
 
+  const env = loadEnv();
+  const effectivePrefix = seller.link_prefix ?? env.CONFIG_LINK_PREFIX;
+
   let infoLines: string;
   if (seller.user) {
     const name = [seller.user.first_name, seller.user.last_name].filter(Boolean).join(' ');
@@ -54,11 +59,13 @@ async function renderDetail(ctx: BotContext) {
       `🆔 یوزرنیم: ${username}\n` +
       `💬 چت آیدی: ${seller.chat_id}\n` +
       `📝 یادداشت: ${seller.note || '—'}\n` +
+      `🏷 فرمت لینک: ${seller.link_prefix ? `\`${seller.link_prefix}\`` : `پیش‌فرض (\`${env.CONFIG_LINK_PREFIX}\`)`}\n` +
       `🔗 وضعیت: ${seller.is_active ? 'فعال ✅' : 'غیرفعال ❌'}`;
   } else {
     infoLines =
       `💬 چت آیدی: ${seller.chat_id}\n` +
       `📝 یادداشت: ${seller.note || '—'}\n` +
+      `🏷 فرمت لینک: ${seller.link_prefix ? `\`${seller.link_prefix}\`` : `پیش‌فرض (\`${env.CONFIG_LINK_PREFIX}\`)`}\n` +
       `🔗 وضعیت: هنوز شروع نکرده ⏳`;
   }
 
@@ -77,7 +84,10 @@ async function renderDetail(ctx: BotContext) {
     buttons.push([Markup.button.callback('📊 اکانت‌ها و تسویه', 'seller_accounts')]);
   }
 
-  buttons.push([Markup.button.callback('✏️ ویرایش یادداشت', 'edit_note')]);
+  buttons.push([
+    Markup.button.callback('✏️ ویرایش یادداشت', 'edit_note'),
+    Markup.button.callback('🏷 فرمت لینک', 'edit_link_prefix'),
+  ]);
 
   if (seller.is_active) {
     buttons.push([Markup.button.callback('🔴 غیرفعال کردن', 'deactivate')]);
@@ -106,6 +116,7 @@ adminSellerDetailScene.action('seller_accounts', async (ctx) => {
 
 adminSellerDetailScene.action('edit_note', async (ctx) => {
   await ctx.answerCbQuery();
+  ctx.session.sellerEditField = 'note';
   const msg = await getMessage('admin.enter_seller_note');
   await sendOrEdit(
     ctx,
@@ -114,17 +125,40 @@ adminSellerDetailScene.action('edit_note', async (ctx) => {
   );
 });
 
+adminSellerDetailScene.action('edit_link_prefix', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.sellerEditField = 'link_prefix';
+  await sendOrEdit(
+    ctx,
+    'فرمت لینک جدید را وارد کنید:\n(نام اکانت به انتها اضافه می‌شود)\n\nمثال: 🕊️ 🇩🇪  DE|\n\nبرای بازگشت به پیش‌فرض "reset" بفرستید.',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_detail')]]),
+  );
+});
+
 adminSellerDetailScene.on('text', async (ctx) => {
   const sellerId = ctx.session.managingSellerId;
   if (!sellerId) return;
 
-  const note = ctx.message.text.trim();
+  const input = ctx.message.text.trim();
   const db = getDb();
+
+  if (ctx.session.sellerEditField === 'link_prefix') {
+    const newPrefix = input.toLowerCase() === 'reset' ? null : input;
+    await db.seller.update({
+      where: { id: sellerId },
+      data: { link_prefix: newPrefix },
+    });
+    ctx.session.sellerEditField = undefined;
+    await renderDetail(ctx);
+    return;
+  }
+
+  // Default: editing note
   await db.seller.update({
     where: { id: sellerId },
-    data: { note },
+    data: { note: input },
   });
-
+  ctx.session.sellerEditField = undefined;
   await renderDetail(ctx);
 });
 

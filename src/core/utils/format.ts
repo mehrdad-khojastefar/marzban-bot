@@ -40,7 +40,7 @@ export function buildSubUrl(subBaseUrl: string, proxies: Record<string, unknown>
 }
 
 export function renameConfigLinks(links: string[], prefix: string, username: string): string[] {
-  const displayName = `${prefix} ${username}`;
+  const displayName = `${prefix}${username}`;
   return links.map((link) => {
     // vmess:// → base64 JSON with "ps" field
     if (link.startsWith('vmess://')) {

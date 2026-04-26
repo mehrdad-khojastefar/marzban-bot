@@ -26,6 +26,7 @@ export interface SessionData extends Scenes.SceneSessionData {
 
   // admin seller management
   managingSellerId?: number;
+  sellerEditField?: 'note' | 'link_prefix';
   managingSellerPlanId?: number;
   accountFilter?: 'all' | 'unpaid' | 'paid';
   selectedAccountIds?: number[];
