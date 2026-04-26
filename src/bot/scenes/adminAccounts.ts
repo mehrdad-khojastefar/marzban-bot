@@ -230,10 +230,10 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
     const env = loadEnv();
     const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
 
-    let linksText = `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+    let linksText = `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
     if (marzbanUser.links && marzbanUser.links.length > 0) {
       const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, marzbanUsername);
-      linksText += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
+      linksText += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
     }
 
     ctx.session.adminCreateStep = undefined;

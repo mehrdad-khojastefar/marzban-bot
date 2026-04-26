@@ -64,10 +64,10 @@ viewAccountScene.enter(async (ctx) => {
   if (!isExpired) {
     const env = loadEnv();
     const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, account.marzban_username);
-    text += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+    text += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
     if (marzbanUser.links && marzbanUser.links.length > 0) {
       const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, account.marzban_username);
-      text += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
+      text += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
     }
   }
 

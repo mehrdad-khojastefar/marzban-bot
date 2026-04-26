@@ -67,10 +67,10 @@ testAccountScene.enter(async (ctx) => {
 
     let configText = '';
     const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
-    configText += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+    configText += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
     if (marzbanUser.links && marzbanUser.links.length > 0) {
       const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, marzbanUsername);
-      configText += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
+      configText += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
     }
 
     await sendOrEdit(

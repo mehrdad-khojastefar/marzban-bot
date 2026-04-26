@@ -116,12 +116,12 @@ async function renderDetail(ctx: BotContext) {
     `💰 قیمت: ${priceText}\n` +
     `💳 پرداخت: ${paymentText}\n` +
     `📝 یادداشت: ${noteText}\n\n` +
-    `🔗 لینک اشتراک:\n${subUrl}`;
+    `🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
 
   if (marzbanLinks.length > 0) {
     const linkPrefix = account.seller?.link_prefix ?? env.CONFIG_LINK_PREFIX;
     const renamed = renameConfigLinks(marzbanLinks, linkPrefix, account.marzban_username);
-    text += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
+    text += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
   }
 
   const isDisabled = marzbanStatus === 'disabled';
