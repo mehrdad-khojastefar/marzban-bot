@@ -59,9 +59,7 @@ export async function startSubServer(config: SubServerConfig): Promise<http.Serv
       const decoded = Buffer.from(body.trim(), 'base64').toString('utf-8');
       const links = decoded.split('\n').filter((l) => l.trim().length > 0);
 
-      const renamed = username
-        ? renameConfigLinks(links, linkPrefix, username)
-        : links;
+      const renamed = renameConfigLinks(links, linkPrefix, username);
 
       const reEncoded = Buffer.from(renamed.join('\n')).toString('base64');
 
