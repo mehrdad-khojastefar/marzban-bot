@@ -11,7 +11,7 @@ import {
   formatPercent,
   formatProgressBar,
   buildSubUrl,
-  fetchConfigs,
+  fetchAndRenameConfigs,
 } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
@@ -40,13 +40,11 @@ async function renderDetail(ctx: BotContext) {
   const marzban = getMarzban();
   let usedTraffic = 0;
   let marzbanStatus = 'active';
-  let marzbanSubUrl = '';
 
   try {
     const marzbanUser = await marzban.getUser(account.marzban_username);
     usedTraffic = marzbanUser.used_traffic;
     marzbanStatus = marzbanUser.status;
-    marzbanSubUrl = marzbanUser.subscription_url ?? '';
   } catch {
     // If Marzban unreachable, show with zeros
   }
@@ -90,12 +88,18 @@ async function renderDetail(ctx: BotContext) {
     `💰 پرداخت: ${paymentText}\n` +
     `📝 یادداشت: ${noteText}`;
 
-  // Include subscription link + configs inline
+  // Include subscription link + config links
   const env = loadEnv();
-  if (marzbanSubUrl) {
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanSubUrl);
+  if (account.marzban_sub_token) {
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, `/sub/${account.marzban_sub_token}`);
+    const linkPrefix = account.seller?.link_prefix ?? env.CONFIG_LINK_PREFIX;
+    const configs = await fetchAndRenameConfigs(
+      env.MARZBAN_SUB_URL,
+      account.marzban_sub_token,
+      linkPrefix,
+      account.marzban_username,
+    );
     text += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-    const configs = await fetchConfigs(subUrl);
     if (configs.length > 0) {
       text += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
     }

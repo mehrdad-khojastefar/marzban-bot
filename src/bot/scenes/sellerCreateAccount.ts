@@ -6,7 +6,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, buildSubUrl, fetchConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes, buildSubUrl, fetchAndRenameConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const SELLER_ACCOUNT_DURATION_DAYS = 30;
@@ -102,11 +102,18 @@ async function provisionAccount(ctx: BotContext) {
     });
 
     const env = loadEnv();
+    const subToken = extractSubToken(marzbanUser.subscription_url);
+    const linkPrefix = seller.link_prefix ?? env.CONFIG_LINK_PREFIX;
 
     let configText = '';
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, `/sub/${subToken}`);
     configText += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-    const configs = await fetchConfigs(subUrl);
+    const configs = await fetchAndRenameConfigs(
+      env.MARZBAN_SUB_URL,
+      subToken,
+      linkPrefix,
+      marzbanUsername,
+    );
     if (configs.length > 0) {
       configText += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
     }

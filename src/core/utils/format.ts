@@ -54,6 +54,25 @@ export async function fetchConfigs(subUrl: string): Promise<string[]> {
   }
 }
 
+export async function fetchAndRenameConfigs(
+  marzbanSubUrl: string,
+  token: string,
+  linkPrefix: string,
+  username: string,
+): Promise<string[]> {
+  try {
+    const url = `${marzbanSubUrl.replace(/\/+$/, '')}/sub/${token}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const body = await res.text();
+    const decoded = Buffer.from(body.trim(), 'base64').toString('utf-8');
+    const links = decoded.split('\n').filter((l) => l.trim().length > 0);
+    return renameConfigLinks(links, linkPrefix, username);
+  } catch {
+    return [];
+  }
+}
+
 export function renameConfigLinks(links: string[], prefix: string, username: string): string[] {
   const displayName = `${prefix}${username}`;
   return links.map((link) => {
