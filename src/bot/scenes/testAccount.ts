@@ -4,7 +4,7 @@ import { SCENE_TEST_ACCOUNT, SCENE_HOME } from './constants';
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { getMarzban } from '../../core/marzban';
+import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
 import { buildSubUrl, renameConfigLinks } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
@@ -40,18 +40,12 @@ testAccountScene.enter(async (ctx) => {
     const chatId = ctx.from!.id;
     const marzbanUsername = `test_${chatId}_${Date.now()}`;
 
-    const inbounds = await marzban.getInbounds();
-    const enabledProtocols = Object.keys(inbounds).filter(
-      (proto) => inbounds[proto as keyof typeof inbounds]?.length > 0,
-    );
-    const proxies: Record<string, Record<string, unknown>> = {};
-    for (const proto of enabledProtocols) {
-      proxies[proto] = {};
-    }
+    const { proxies, inbounds } = await buildProxiesAndInbounds();
 
     const marzbanUser = await marzban.addUser({
       username: marzbanUsername,
       proxies,
+      inbounds,
       data_limit: TEST_DATA_LIMIT,
       expire: Math.floor(Date.now() / 1000) + TEST_DURATION_SECONDS,
       status: 'active',

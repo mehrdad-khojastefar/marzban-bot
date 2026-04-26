@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
-import { getMarzban } from '../../core/marzban';
+import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
 import { getMessage } from '../services/messageService';
 
 export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
@@ -34,18 +34,12 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
     const expireTimestamp =
       Math.floor(Date.now() / 1000) + payment.plan.duration_days * 24 * 60 * 60;
 
-    const inbounds = await marzban.getInbounds();
-    const enabledProtocols = Object.keys(inbounds).filter(
-      (proto) => inbounds[proto as keyof typeof inbounds]?.length > 0,
-    );
-    const proxies: Record<string, Record<string, unknown>> = {};
-    for (const proto of enabledProtocols) {
-      proxies[proto] = {};
-    }
+    const { proxies, inbounds } = await buildProxiesAndInbounds();
 
     await marzban.addUser({
       username: marzbanUsername,
       proxies,
+      inbounds,
       data_limit: Number(payment.plan.data_limit),
       expire: expireTimestamp,
       status: 'active',

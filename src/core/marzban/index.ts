@@ -48,3 +48,4 @@ export type {
 
 export { MarzbanError, isMarzbanError } from './errors'
 export { initMarzban, getMarzban } from './singleton'
+export { buildProxiesAndInbounds } from './helpers'

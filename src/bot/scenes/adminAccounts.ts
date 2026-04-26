@@ -5,7 +5,7 @@ import { BotContext } from '../context';
 import { SCENE_ADMIN_ACCOUNTS, SCENE_ADMIN_VIEW_ACCOUNT, SCENE_HOME } from './constants';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { getMarzban } from '../../core/marzban';
+import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
 import { formatPrice, formatBytes, toPersianDigits, buildSubUrl, renameConfigLinks } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
@@ -205,18 +205,12 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
     const expireTimestamp = Math.floor(Date.now() / 1000) + duration * 24 * 60 * 60;
     const expiresAt = new Date(expireTimestamp * 1000);
 
-    const inbounds = await marzban.getInbounds();
-    const enabledProtocols = Object.keys(inbounds).filter(
-      (proto) => inbounds[proto as keyof typeof inbounds]?.length > 0,
-    );
-    const proxies: Record<string, Record<string, unknown>> = {};
-    for (const proto of enabledProtocols) {
-      proxies[proto] = {};
-    }
+    const { proxies, inbounds } = await buildProxiesAndInbounds();
 
     const marzbanUser = await marzban.addUser({
       username: marzbanUsername,
       proxies,
+      inbounds,
       data_limit: dataLimit,
       expire: expireTimestamp,
       status: 'active',
