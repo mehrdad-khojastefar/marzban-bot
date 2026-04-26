@@ -10,6 +10,7 @@ export const envSchema = z.object({
   CARD_NUMBER: z.string(),
   SUPPORT_USERNAME: z.string(),
   SUB_BASE_URL: z.string().url(),
+  CONFIG_LINK_PREFIX: z.string().default('🕊️ 🇩🇪  DE|'),
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
 });

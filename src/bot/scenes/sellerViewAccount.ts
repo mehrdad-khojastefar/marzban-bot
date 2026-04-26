@@ -12,6 +12,7 @@ import {
   formatProgressBar,
   toPersianDigits,
   buildSubUrl,
+  renameConfigLinks,
 } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
@@ -99,7 +100,8 @@ async function renderDetail(ctx: BotContext) {
   const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanProxies, account.marzban_username);
   text += `\n\n🔗 لینک اشتراک:\n${subUrl}`;
   if (marzbanLinks.length > 0) {
-    text += `\n\n📋 لینک‌های مستقیم:\n${marzbanLinks.join('\n')}`;
+    const renamed = renameConfigLinks(marzbanLinks, env.CONFIG_LINK_PREFIX, account.marzban_username);
+    text += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
   }
 
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [

@@ -39,6 +39,35 @@ export function buildSubUrl(subBaseUrl: string, proxies: Record<string, unknown>
   return `${base}/sub/${uuid}/${username}/`;
 }
 
+export function renameConfigLinks(links: string[], prefix: string, username: string): string[] {
+  const displayName = `${prefix} ${username}`;
+  return links.map((link) => {
+    // vmess:// → base64 JSON with "ps" field
+    if (link.startsWith('vmess://')) {
+      try {
+        const b64 = link.slice(8);
+        const json = JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
+        json.ps = displayName;
+        return 'vmess://' + Buffer.from(JSON.stringify(json)).toString('base64');
+      } catch {
+        return link;
+      }
+    }
+
+    // vless://, trojan://, ss:// → #fragment is the name
+    const fragmentProtos = ['vless://', 'trojan://', 'ss://'];
+    for (const proto of fragmentProtos) {
+      if (link.startsWith(proto)) {
+        const hashIdx = link.indexOf('#');
+        const base = hashIdx >= 0 ? link.slice(0, hashIdx) : link;
+        return base + '#' + encodeURIComponent(displayName);
+      }
+    }
+
+    return link;
+  });
+}
+
 export function formatPercent(used: number, total: number): number {
   if (total <= 0) return 0;
   return Math.min(100, Math.round((used / total) * 100));

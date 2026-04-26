@@ -6,7 +6,7 @@ import { SCENE_ADMIN_ACCOUNTS, SCENE_ADMIN_VIEW_ACCOUNT, SCENE_HOME } from './co
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
-import { formatPrice, formatBytes, toPersianDigits, buildSubUrl } from '../../core/utils/format';
+import { formatPrice, formatBytes, toPersianDigits, buildSubUrl, renameConfigLinks } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const PAGE_SIZE = 8;
@@ -238,7 +238,8 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
 
     let linksText = `\n\n🔗 لینک اشتراک:\n${subUrl}`;
     if (marzbanUser.links && marzbanUser.links.length > 0) {
-      linksText += `\n\n📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`;
+      const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, marzbanUsername);
+      linksText += `\n\n📋 لینک‌های مستقیم:\n${renamed.join('\n')}`;
     }
 
     ctx.session.adminCreateStep = undefined;
