@@ -1,6 +1,6 @@
 services:
   db:
-    image: hub.hamdocker.ir/library/postgres:16-alpine
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: marzban_bot
@@ -17,7 +17,7 @@ services:
       retries: 5
 
   bot:
-    build: .
+    image: ghcr.io/mehrdad-khojastefar/marzban-bot:main
     restart: unless-stopped
     command: ["node", "dist/bot/main.js"]
     depends_on:
@@ -28,7 +28,7 @@ services:
       DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
 
   sub:
-    build: .
+    image: ghcr.io/mehrdad-khojastefar/marzban-bot:main
     restart: unless-stopped
     command: ["node", "dist/sub/main.js"]
     depends_on:
@@ -41,7 +41,7 @@ services:
       DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
 
   migrate:
-    build: .
+    image: ghcr.io/mehrdad-khojastefar/marzban-bot:main
     command: ["npx", "prisma", "migrate", "deploy", "--config", "prisma/prisma.config.ts"]
     depends_on:
       db:
@@ -52,7 +52,7 @@ services:
     profiles: ["migrate"]
 
   seed:
-    build: .
+    image: ghcr.io/mehrdad-khojastefar/marzban-bot:main
     command: ["node", "dist/db/seeds/seed.js"]
     depends_on:
       db:
