@@ -31,17 +31,27 @@ export function formatPrice(toman: number): string {
   return formatted + ' تومان';
 }
 
-export function buildSubUrl(subBaseUrl: string, proxies: Record<string, unknown>, username: string): string {
-  // Extract UUID from the first available proxy (e.g. proxies.vmess.id)
-  let uuid = '';
-  for (const proto of Object.values(proxies)) {
-    if (proto && typeof proto === 'object' && 'id' in proto) {
-      uuid = String((proto as Record<string, unknown>).id);
-      break;
-    }
-  }
+export function extractSubToken(marzbanSubUrl: string): string {
+  const match = marzbanSubUrl.match(/\/sub\/(.+?)\/?\s*$/);
+  return match ? match[1] : '';
+}
+
+export function buildSubUrl(subBaseUrl: string, marzbanSubPath: string): string {
   const base = subBaseUrl.replace(/\/+$/, '');
-  return `${base}/sub/${uuid}/${username}/`;
+  const path = marzbanSubPath.startsWith('/') ? marzbanSubPath : '/' + marzbanSubPath;
+  return `${base}${path}`;
+}
+
+export async function fetchConfigs(subUrl: string): Promise<string[]> {
+  try {
+    const res = await fetch(subUrl);
+    if (!res.ok) return [];
+    const body = await res.text();
+    const decoded = Buffer.from(body.trim(), 'base64').toString('utf-8');
+    return decoded.split('\n').filter((l) => l.trim().length > 0);
+  } catch {
+    return [];
+  }
 }
 
 export function renameConfigLinks(links: string[], prefix: string, username: string): string[] {

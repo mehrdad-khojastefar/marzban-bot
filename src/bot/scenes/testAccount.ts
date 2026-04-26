@@ -5,7 +5,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { buildSubUrl, renameConfigLinks } from '../../core/utils/format';
+import { buildSubUrl, fetchConfigs, extractSubToken } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const TEST_DATA_LIMIT = 104857600; // 100MB
@@ -55,6 +55,7 @@ testAccountScene.enter(async (ctx) => {
       data: {
         user_id: user.id,
         marzban_username: marzbanUsername,
+        marzban_sub_token: extractSubToken(marzbanUser.subscription_url),
         type: 'test',
         expires_at: new Date(Date.now() + TEST_DURATION_SECONDS * 1000),
       },
@@ -66,11 +67,11 @@ testAccountScene.enter(async (ctx) => {
     const env = loadEnv();
 
     let configText = '';
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
     configText += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-    if (marzbanUser.links && marzbanUser.links.length > 0) {
-      const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, marzbanUsername);
-      configText += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
+    const configs = await fetchConfigs(subUrl);
+    if (configs.length > 0) {
+      configText += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
     }
 
     await sendOrEdit(

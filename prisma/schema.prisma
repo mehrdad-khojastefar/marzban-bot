@@ -64,8 +64,9 @@ model Account {
   plan_id          Int?
   seller_id        Int?
   seller_plan_id   Int?
-  marzban_username String
-  type             AccountType
+  marzban_username  String
+  marzban_sub_token String?
+  type              AccountType
   payment_status   AccountPaymentStatus?
   price            Int?
   note             String?

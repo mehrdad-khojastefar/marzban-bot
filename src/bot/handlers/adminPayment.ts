@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
+import { extractSubToken } from '../../core/utils/format';
 import { getMessage } from '../services/messageService';
 
 export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
@@ -36,7 +37,7 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
 
     const { proxies, inbounds } = await buildProxiesAndInbounds();
 
-    await marzban.addUser({
+    const marzbanUser = await marzban.addUser({
       username: marzbanUsername,
       proxies,
       inbounds,
@@ -50,6 +51,7 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
         user_id: payment.user_id,
         plan_id: payment.plan_id,
         marzban_username: marzbanUsername,
+        marzban_sub_token: extractSubToken(marzbanUser.subscription_url),
         type: 'paid',
         expires_at: new Date(expireTimestamp * 1000),
       },

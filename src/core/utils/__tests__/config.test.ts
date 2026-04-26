@@ -11,6 +11,7 @@ const validEnv = {
   CARD_NUMBER: '6037-xxxx',
   SUPPORT_USERNAME: '@support',
   SUB_BASE_URL: 'https://sub.example.com',
+  MARZBAN_SUB_URL: 'http://internal-marzban:8085',
 };
 
 describe('loadEnv', () => {

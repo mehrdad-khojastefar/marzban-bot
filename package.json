@@ -10,7 +10,8 @@
     "db:generate": "prisma generate --config prisma/prisma.config.ts",
     "db:migrate": "prisma migrate dev --config prisma/prisma.config.ts",
     "db:seed": "npx tsx src/db/seeds/seed.ts",
-    "bot:start": "npx tsx src/bot/main.ts"
+    "bot:start": "npx tsx src/bot/main.ts",
+    "sub:start": "npx tsx src/sub/main.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

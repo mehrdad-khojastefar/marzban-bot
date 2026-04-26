@@ -5,7 +5,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
-import { formatBytes, formatDaysLeft, buildSubUrl, renameConfigLinks } from '../../core/utils/format';
+import { formatBytes, formatDaysLeft, buildSubUrl, fetchConfigs } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 export const viewAccountScene = new Scenes.BaseScene<BotContext>(SCENE_VIEW_ACCOUNT);
@@ -63,11 +63,11 @@ viewAccountScene.enter(async (ctx) => {
   // Add config links inline
   if (!isExpired) {
     const env = loadEnv();
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, account.marzban_username);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
     text += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-    if (marzbanUser.links && marzbanUser.links.length > 0) {
-      const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, account.marzban_username);
-      text += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
+    const configs = await fetchConfigs(subUrl);
+    if (configs.length > 0) {
+      text += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
     }
   }
 

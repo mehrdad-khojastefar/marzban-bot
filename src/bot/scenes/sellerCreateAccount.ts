@@ -6,7 +6,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, buildSubUrl, renameConfigLinks, toEnglishDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes, buildSubUrl, fetchConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const SELLER_ACCOUNT_DURATION_DAYS = 30;
@@ -84,6 +84,7 @@ async function provisionAccount(ctx: BotContext) {
         seller_id: sellerId,
         seller_plan_id: planId,
         marzban_username: marzbanUsername,
+        marzban_sub_token: extractSubToken(marzbanUser.subscription_url),
         type: 'paid',
         payment_status: 'unpaid',
         price,
@@ -103,12 +104,11 @@ async function provisionAccount(ctx: BotContext) {
     const env = loadEnv();
 
     let configText = '';
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
     configText += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-    if (marzbanUser.links && marzbanUser.links.length > 0) {
-      const linkPrefix = seller.link_prefix ?? env.CONFIG_LINK_PREFIX;
-      const renamed = renameConfigLinks(marzbanUser.links, linkPrefix, marzbanUsername);
-      configText += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
+    const configs = await fetchConfigs(subUrl);
+    if (configs.length > 0) {
+      configText += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
     }
 
     await sendOrEdit(

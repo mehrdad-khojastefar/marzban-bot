@@ -15,7 +15,7 @@ import {
   formatProgressBar,
   formatPrice,
   buildSubUrl,
-  renameConfigLinks,
+  fetchConfigs,
   toEnglishDigits,
 } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
@@ -53,16 +53,14 @@ async function renderDetail(ctx: BotContext) {
   const marzban = getMarzban();
   let usedTraffic = 0;
   let marzbanStatus = 'active';
-  let marzbanProxies: Record<string, unknown> = {};
-  let marzbanLinks: string[] = [];
+  let marzbanSubUrl = '';
   let dataLimitLive = account.seller_plan ? Number(account.seller_plan.data_limit) : 0;
 
   try {
     const marzbanUser = await marzban.getUser(account.marzban_username);
     usedTraffic = marzbanUser.used_traffic;
     marzbanStatus = marzbanUser.status;
-    marzbanProxies = marzbanUser.proxies;
-    marzbanLinks = marzbanUser.links ?? [];
+    marzbanSubUrl = marzbanUser.subscription_url ?? '';
     if (marzbanUser.data_limit) {
       dataLimitLive = marzbanUser.data_limit;
     }
@@ -100,7 +98,6 @@ async function renderDetail(ctx: BotContext) {
     : '—';
 
   const env = loadEnv();
-  const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanProxies, account.marzban_username);
 
   let text =
     `🔧 مدیریت اکانت\n\n` +
@@ -113,13 +110,15 @@ async function renderDetail(ctx: BotContext) {
     `⏰ انقضا: ${daysLeft} مانده (${expireDate})\n` +
     `💰 قیمت: ${priceText}\n` +
     `💳 پرداخت: ${paymentText}\n` +
-    `📝 یادداشت: ${noteText}\n\n` +
-    `🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
+    `📝 یادداشت: ${noteText}`;
 
-  if (marzbanLinks.length > 0) {
-    const linkPrefix = account.seller?.link_prefix ?? env.CONFIG_LINK_PREFIX;
-    const renamed = renameConfigLinks(marzbanLinks, linkPrefix, account.marzban_username);
-    text += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
+  if (marzbanSubUrl) {
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanSubUrl);
+    text += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
+    const configs = await fetchConfigs(subUrl);
+    if (configs.length > 0) {
+      text += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
+    }
   }
 
   const isDisabled = marzbanStatus === 'disabled';

@@ -6,7 +6,7 @@ import { SCENE_ADMIN_ACCOUNTS, SCENE_ADMIN_VIEW_ACCOUNT, SCENE_HOME } from './co
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, buildSubUrl, renameConfigLinks, toEnglishDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes, buildSubUrl, fetchConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const PAGE_SIZE = 8;
@@ -218,6 +218,7 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
       data: {
         user_id: user.id,
         marzban_username: marzbanUsername,
+        marzban_sub_token: extractSubToken(marzbanUser.subscription_url),
         type: 'paid',
         payment_status: price > 0 ? 'unpaid' : 'paid',
         price,
@@ -226,12 +227,12 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
     });
 
     const env = loadEnv();
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
 
     let linksText = `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-    if (marzbanUser.links && marzbanUser.links.length > 0) {
-      const renamed = renameConfigLinks(marzbanUser.links, env.CONFIG_LINK_PREFIX, marzbanUsername);
-      linksText += `\n📋 لینک‌های مستقیم:\n<pre>${renamed.join('\n')}</pre>`;
+    const configs = await fetchConfigs(subUrl);
+    if (configs.length > 0) {
+      linksText += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
     }
 
     ctx.session.adminCreateStep = undefined;
