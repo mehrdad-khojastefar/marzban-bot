@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.claude
+.env
+.env.local
+*.md
+!README.md
+design
+docs
+.husky
+.eslintrc*
+.prettierrc*
+vitest.config*
+src/**/__tests__
+src/panel
+src/cli

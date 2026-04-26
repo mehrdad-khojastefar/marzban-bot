@@ -10,6 +10,57 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marzban_bot"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  bot:
+    build: .
+    restart: unless-stopped
+    command: ["node", "dist/bot/main.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
+
+  sub:
+    build: .
+    restart: unless-stopped
+    command: ["node", "dist/sub/main.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${SUB_PORT:-8085}:${SUB_PORT:-8085}"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
+
+  migrate:
+    build: .
+    command: ["npx", "prisma", "migrate", "deploy", "--config", "prisma/prisma.config.ts"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
+    profiles: ["migrate"]
+
+  seed:
+    build: .
+    command: ["node", "dist/db/seeds/seed.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
+    profiles: ["seed"]
 
 volumes:
   pgdata:
