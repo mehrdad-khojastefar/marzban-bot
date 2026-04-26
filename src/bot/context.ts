@@ -19,6 +19,10 @@ export interface SessionData extends Scenes.SceneSessionData {
   // admin account management
   adminEditField?: 'data_limit' | 'expire' | 'price' | 'note';
   adminAccountsFrom?: 'seller' | 'global';
+  adminCreateStep?: 'chat_id' | 'data_limit' | 'duration' | 'price';
+  adminCreateChatId?: number;
+  adminCreateDataLimit?: number;
+  adminCreateDuration?: number;
 
   // admin seller management
   managingSellerId?: number;

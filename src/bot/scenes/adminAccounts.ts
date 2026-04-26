@@ -1,13 +1,25 @@
+import crypto from 'node:crypto';
 import { Scenes, Markup } from 'telegraf';
 import { Prisma } from '@prisma/client';
 import { BotContext } from '../context';
 import { SCENE_ADMIN_ACCOUNTS, SCENE_ADMIN_VIEW_ACCOUNT, SCENE_HOME } from './constants';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatPrice, formatBytes, toPersianDigits } from '../../core/utils/format';
+import { getMarzban } from '../../core/marzban';
+import { formatPrice, formatBytes, toPersianDigits, buildSubUrl } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const PAGE_SIZE = 8;
+
+function generateUsername(): string {
+  return 'a_' + crypto.randomBytes(3).toString('hex').slice(0, 6);
+}
+
+function formatJalaliDate(date: Date): string {
+  return toPersianDigits(
+    date.toLocaleDateString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }),
+  );
+}
 
 export const adminAccountsScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_ACCOUNTS);
 
@@ -17,6 +29,8 @@ async function renderAccountList(ctx: BotContext) {
     await ctx.scene.enter(SCENE_HOME);
     return;
   }
+
+  ctx.session.adminCreateStep = undefined;
 
   const db = getDb();
   const page = ctx.session.currentPage ?? 0;
@@ -86,7 +100,10 @@ async function renderAccountList(ctx: BotContext) {
     ),
   ];
 
-  const buttons: ReturnType<typeof Markup.button.callback>[][] = [filterButtons];
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [
+    [Markup.button.callback('➕ ساخت اکانت', 'create_account')],
+    filterButtons,
+  ];
 
   // Search button
   buttons.push([
@@ -141,9 +158,217 @@ adminAccountsScene.enter(async (ctx) => {
   ctx.session.currentPage = 0;
   ctx.session.accountFilter = 'all';
   ctx.session.searchQuery = undefined;
+  ctx.session.adminCreateStep = undefined;
   await renderAccountList(ctx);
 });
 
+// --- Create account flow ---
+adminAccountsScene.action('create_account', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminCreateStep = 'chat_id';
+  await sendOrEdit(
+    ctx,
+    '➕ ساخت اکانت جدید\n\nچت آیدی کاربر را وارد کنید:',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 انصراف', 'cancel_create')]]),
+  );
+});
+
+adminAccountsScene.action('confirm_create', async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const chatId = ctx.session.adminCreateChatId;
+  const dataLimit = ctx.session.adminCreateDataLimit;
+  const duration = ctx.session.adminCreateDuration;
+  const price = ctx.session.pendingPrice;
+
+  if (!chatId || !dataLimit || !duration || price === undefined) {
+    await renderAccountList(ctx);
+    return;
+  }
+
+  const db = getDb();
+
+  // Find or create user
+  let user = await db.user.findUnique({ where: { chat_id: BigInt(chatId) } });
+  if (!user) {
+    user = await db.user.create({
+      data: {
+        chat_id: BigInt(chatId),
+        first_name: String(chatId),
+      },
+    });
+  }
+
+  try {
+    const marzban = getMarzban();
+    const marzbanUsername = generateUsername();
+    const expireTimestamp = Math.floor(Date.now() / 1000) + duration * 24 * 60 * 60;
+    const expiresAt = new Date(expireTimestamp * 1000);
+
+    const inbounds = await marzban.getInbounds();
+    const enabledProtocols = Object.keys(inbounds).filter(
+      (proto) => inbounds[proto as keyof typeof inbounds]?.length > 0,
+    );
+    const proxies: Record<string, Record<string, unknown>> = {};
+    for (const proto of enabledProtocols) {
+      proxies[proto] = {};
+    }
+
+    const marzbanUser = await marzban.addUser({
+      username: marzbanUsername,
+      proxies,
+      data_limit: dataLimit,
+      expire: expireTimestamp,
+      status: 'active',
+    });
+
+    const account = await db.account.create({
+      data: {
+        user_id: user.id,
+        marzban_username: marzbanUsername,
+        type: 'paid',
+        payment_status: price > 0 ? 'unpaid' : 'paid',
+        price,
+        expires_at: expiresAt,
+      },
+    });
+
+    const env = loadEnv();
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.proxies, marzbanUsername);
+
+    let linksText = `\n\n🔗 لینک اشتراک:\n${subUrl}`;
+    if (marzbanUser.links && marzbanUser.links.length > 0) {
+      linksText += `\n\n📋 لینک‌های مستقیم:\n${marzbanUser.links.join('\n')}`;
+    }
+
+    ctx.session.adminCreateStep = undefined;
+    ctx.session.selectedAccountId = account.id;
+
+    await sendOrEdit(
+      ctx,
+      `✅ اکانت ساخته شد!\n\n` +
+        `📛 نام: ${marzbanUsername}\n` +
+        `👤 چت آیدی: ${chatId}\n` +
+        `📊 حجم: ${formatBytes(dataLimit)}\n` +
+        `⏰ مدت: ${toPersianDigits(String(duration))} روز\n` +
+        `💰 قیمت: ${formatPrice(price)}\n` +
+        `📅 انقضا: ${formatJalaliDate(expiresAt)}` +
+        linksText,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🔧 مدیریت اکانت', 'manage_created')],
+        [Markup.button.callback('🔙 بازگشت به لیست', 'back_list')],
+      ]),
+    );
+  } catch (err) {
+    console.error('Admin account provisioning failed:', err);
+    await sendOrEdit(
+      ctx,
+      'خطا در ساخت اکانت.',
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
+    );
+  }
+});
+
+adminAccountsScene.action('manage_created', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminAccountsFrom = 'global';
+  await ctx.scene.enter(SCENE_ADMIN_VIEW_ACCOUNT);
+});
+
+adminAccountsScene.action('cancel_create', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminCreateStep = undefined;
+  await renderAccountList(ctx);
+});
+
+// --- Text input handler ---
+adminAccountsScene.on('text', async (ctx) => {
+  const input = ctx.message.text.trim();
+  const backButton = Markup.inlineKeyboard([
+    [Markup.button.callback('🔙 انصراف', 'cancel_create')],
+  ]);
+
+  // Create flow: chat_id step
+  if (ctx.session.adminCreateStep === 'chat_id') {
+    const chatId = parseInt(input);
+    if (isNaN(chatId) || chatId <= 0) {
+      await sendOrEdit(ctx, 'چت آیدی نامعتبر است. عدد وارد کنید:', backButton);
+      return;
+    }
+    ctx.session.adminCreateChatId = chatId;
+    ctx.session.adminCreateStep = 'data_limit';
+    await sendOrEdit(ctx, 'حجم را به گیگابایت وارد کنید:', backButton);
+    return;
+  }
+
+  // Create flow: data_limit step
+  if (ctx.session.adminCreateStep === 'data_limit') {
+    const gb = parseFloat(input);
+    if (isNaN(gb) || gb <= 0) {
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
+      return;
+    }
+    ctx.session.adminCreateDataLimit = Math.round(gb * 1073741824);
+    ctx.session.adminCreateStep = 'duration';
+    await sendOrEdit(ctx, 'مدت اعتبار را به روز وارد کنید:', backButton);
+    return;
+  }
+
+  // Create flow: duration step
+  if (ctx.session.adminCreateStep === 'duration') {
+    const days = parseInt(input);
+    if (isNaN(days) || days <= 0) {
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
+      return;
+    }
+    ctx.session.adminCreateDuration = days;
+    ctx.session.adminCreateStep = 'price';
+    await sendOrEdit(ctx, 'قیمت را به تومان وارد کنید (۰ برای رایگان):', backButton);
+    return;
+  }
+
+  // Create flow: price step → show confirmation
+  if (ctx.session.adminCreateStep === 'price') {
+    const price = parseInt(input);
+    if (isNaN(price) || price < 0) {
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
+      return;
+    }
+    ctx.session.pendingPrice = price;
+
+    const chatId = ctx.session.adminCreateChatId!;
+    const dataLimit = ctx.session.adminCreateDataLimit!;
+    const duration = ctx.session.adminCreateDuration!;
+    const expiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+
+    await sendOrEdit(
+      ctx,
+      `⚠️ تأیید ساخت اکانت\n\n` +
+        `👤 چت آیدی: ${chatId}\n` +
+        `📊 حجم: ${formatBytes(dataLimit)}\n` +
+        `⏰ مدت: ${toPersianDigits(String(duration))} روز\n` +
+        `💰 قیمت: ${formatPrice(price)}\n` +
+        `📅 انقضا: ${formatJalaliDate(expiresAt)}\n\n` +
+        `آیا مطمئن هستید؟`,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.callback('✅ تأیید و ساخت', 'confirm_create'),
+          Markup.button.callback('❌ انصراف', 'cancel_create'),
+        ],
+      ]),
+    );
+    return;
+  }
+
+  // Search flow (no create step active)
+  if (!ctx.session.adminCreateStep) {
+    ctx.session.searchQuery = input;
+    ctx.session.currentPage = 0;
+    await renderAccountList(ctx);
+  }
+});
+
+// --- View account ---
 adminAccountsScene.action(/^view_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.selectedAccountId = parseInt(ctx.match[1]);
@@ -151,6 +376,7 @@ adminAccountsScene.action(/^view_(\d+)$/, async (ctx) => {
   await ctx.scene.enter(SCENE_ADMIN_VIEW_ACCOUNT);
 });
 
+// --- Search ---
 adminAccountsScene.action('search', async (ctx) => {
   await ctx.answerCbQuery();
   await sendOrEdit(
@@ -158,12 +384,6 @@ adminAccountsScene.action('search', async (ctx) => {
     'نام اکانت یا یادداشت را جستجو کنید:',
     Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
   );
-});
-
-adminAccountsScene.on('text', async (ctx) => {
-  ctx.session.searchQuery = ctx.message.text.trim();
-  ctx.session.currentPage = 0;
-  await renderAccountList(ctx);
 });
 
 adminAccountsScene.action('clear_search', async (ctx) => {
@@ -175,9 +395,11 @@ adminAccountsScene.action('clear_search', async (ctx) => {
 
 adminAccountsScene.action('back_list', async (ctx) => {
   await ctx.answerCbQuery();
+  ctx.session.adminCreateStep = undefined;
   await renderAccountList(ctx);
 });
 
+// --- Filters ---
 adminAccountsScene.action('filter_all', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.accountFilter = 'all';
@@ -199,6 +421,7 @@ adminAccountsScene.action('filter_paid', async (ctx) => {
   await renderAccountList(ctx);
 });
 
+// --- Pagination ---
 adminAccountsScene.action('prev_page', async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.currentPage = Math.max(0, (ctx.session.currentPage ?? 0) - 1);
