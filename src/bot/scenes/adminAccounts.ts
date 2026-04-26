@@ -6,7 +6,7 @@ import { SCENE_ADMIN_ACCOUNTS, SCENE_ADMIN_VIEW_ACCOUNT, SCENE_HOME } from './co
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, toPersianDigits, buildSubUrl, renameConfigLinks } from '../../core/utils/format';
+import { formatPrice, formatBytes, buildSubUrl, renameConfigLinks, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const PAGE_SIZE = 8;
@@ -16,9 +16,7 @@ function generateUsername(): string {
 }
 
 function formatJalaliDate(date: Date): string {
-  return toPersianDigits(
-    date.toLocaleDateString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }),
-  );
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 export const adminAccountsScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_ACCOUNTS);
@@ -79,12 +77,12 @@ async function renderAccountList(ctx: BotContext) {
 
   let header =
     `📋 مدیریت اکانت‌ها\n\n` +
-    `کل: ${toPersianDigits(String(totalAccounts))} | ` +
-    `پرداخت‌نشده: ${toPersianDigits(String(unpaidCount))} | ` +
+    `کل: ${String(totalAccounts)} | ` +
+    `پرداخت‌نشده: ${String(unpaidCount)} | ` +
     `بدهی: ${formatPrice(totalDebt)}`;
 
   if (search) {
-    header += `\n🔍 جستجو: "${search}" (${toPersianDigits(String(totalCount))} نتیجه)`;
+    header += `\n🔍 جستجو: "${search}" (${String(totalCount)} نتیجه)`;
   }
 
   // Filter buttons
@@ -139,7 +137,7 @@ async function renderAccountList(ctx: BotContext) {
     }
     navButtons.push(
       Markup.button.callback(
-        `صفحه ${toPersianDigits(String(page + 1))} از ${toPersianDigits(String(totalPages))}`,
+        `صفحه ${String(page + 1)} از ${String(totalPages)}`,
         'noop',
       ),
     );
@@ -245,7 +243,7 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
         `📛 نام: ${marzbanUsername}\n` +
         `👤 چت آیدی: ${chatId}\n` +
         `📊 حجم: ${formatBytes(dataLimit)}\n` +
-        `⏰ مدت: ${toPersianDigits(String(duration))} روز\n` +
+        `⏰ مدت: ${String(duration)} روز\n` +
         `💰 قیمت: ${formatPrice(price)}\n` +
         `📅 انقضا: ${formatJalaliDate(expiresAt)}` +
         linksText,
@@ -278,7 +276,7 @@ adminAccountsScene.action('cancel_create', async (ctx) => {
 
 // --- Text input handler ---
 adminAccountsScene.on('text', async (ctx) => {
-  const input = ctx.message.text.trim();
+  const input = toEnglishDigits(ctx.message.text.trim());
   const backButton = Markup.inlineKeyboard([
     [Markup.button.callback('🔙 انصراف', 'cancel_create')],
   ]);
@@ -341,7 +339,7 @@ adminAccountsScene.on('text', async (ctx) => {
       `⚠️ تأیید ساخت اکانت\n\n` +
         `👤 چت آیدی: ${chatId}\n` +
         `📊 حجم: ${formatBytes(dataLimit)}\n` +
-        `⏰ مدت: ${toPersianDigits(String(duration))} روز\n` +
+        `⏰ مدت: ${String(duration)} روز\n` +
         `💰 قیمت: ${formatPrice(price)}\n` +
         `📅 انقضا: ${formatJalaliDate(expiresAt)}\n\n` +
         `آیا مطمئن هستید؟`,

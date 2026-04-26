@@ -6,7 +6,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, toPersianDigits, buildSubUrl, renameConfigLinks } from '../../core/utils/format';
+import { formatPrice, formatBytes, buildSubUrl, renameConfigLinks, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 const SELLER_ACCOUNT_DURATION_DAYS = 30;
@@ -16,9 +16,7 @@ function generateUsername(): string {
 }
 
 function formatJalaliDate(date: Date): string {
-  return toPersianDigits(
-    date.toLocaleDateString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' }),
-  );
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 async function showConfirmation(ctx: BotContext) {
@@ -33,7 +31,7 @@ async function showConfirmation(ctx: BotContext) {
     `📊 حجم: ${formatBytes(dataLimit)}\n` +
     `💰 قیمت: ${formatPrice(price)}\n` +
     `⏰ انقضا: ${formatJalaliDate(expiresAt)}\n` +
-    `📅 مدت: ${toPersianDigits('30')} روز\n\n` +
+    `📅 مدت: ${'30'} روز\n\n` +
     `آیا مطمئن هستید؟`;
 
   await sendOrEdit(
@@ -102,7 +100,6 @@ async function provisionAccount(ctx: BotContext) {
       expire_date: formatJalaliDate(expiresAt),
     });
 
-    const notePrompt = await getMessage('seller.enter_note');
     const env = loadEnv();
 
     let configText = '';
@@ -116,8 +113,11 @@ async function provisionAccount(ctx: BotContext) {
 
     await sendOrEdit(
       ctx,
-      `${successMsg}\nقیمت: ${formatPrice(price)}${configText}\n\n${notePrompt}`,
-      Markup.inlineKeyboard([[Markup.button.callback('⏭ رد کردن', 'skip_note')]]),
+      `${successMsg}\nقیمت: ${formatPrice(price)}${configText}`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🏷 نام‌گذاری این اکانت', 'name_account')],
+        [Markup.button.callback('🔙 بازگشت به پنل', 'skip_note')],
+      ]),
     );
   } catch (err) {
     console.error('Seller account provisioning failed:', err);
@@ -233,13 +233,24 @@ sellerCreateAccountScene.action('back_plans', async (ctx) => {
   await ctx.scene.enter(SCENE_SELLER_CREATE_ACCOUNT);
 });
 
+sellerCreateAccountScene.action('name_account', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.awaitingAccountName = true;
+  await sendOrEdit(
+    ctx,
+    'نام این اکانت را وارد کنید (قابل جستجو):',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'skip_note')]]),
+  );
+});
+
 sellerCreateAccountScene.action('skip_note', async (ctx) => {
   await ctx.answerCbQuery();
+  ctx.session.awaitingAccountName = false;
   await ctx.scene.enter(SCENE_SELLER_PANEL);
 });
 
 sellerCreateAccountScene.on('text', async (ctx) => {
-  const input = ctx.message.text.trim();
+  const input = toEnglishDigits(ctx.message.text.trim());
 
   // Waiting for per-unit quantity
   if (ctx.session.awaitingQuantity && ctx.session.selectedSellerPlanId) {
@@ -269,22 +280,20 @@ sellerCreateAccountScene.on('text', async (ctx) => {
     return;
   }
 
-  // Waiting for note
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) {
+  // Waiting for account name
+  if (ctx.session.awaitingAccountName && ctx.session.selectedAccountId) {
+    const name = ctx.message.text.trim(); // Use original text (not digit-converted) for names
+    if (name) {
+      const db = getDb();
+      await db.account.update({
+        where: { id: ctx.session.selectedAccountId },
+        data: { note: name },
+      });
+    }
+    ctx.session.awaitingAccountName = false;
     await ctx.scene.enter(SCENE_SELLER_PANEL);
     return;
   }
-
-  if (input) {
-    const db = getDb();
-    await db.account.update({
-      where: { id: accountId },
-      data: { note: input },
-    });
-  }
-
-  await ctx.scene.enter(SCENE_SELLER_PANEL);
 });
 
 sellerCreateAccountScene.action('back_panel', async (ctx) => {

@@ -14,9 +14,9 @@ import {
   formatPercent,
   formatProgressBar,
   formatPrice,
-  toPersianDigits,
   buildSubUrl,
   renameConfigLinks,
+  toEnglishDigits,
 } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
@@ -89,13 +89,11 @@ async function renderDetail(ctx: BotContext) {
   const noteText = account.note || '—';
   const priceText = account.price ? formatPrice(account.price) : '—';
 
-  const expireDate = toPersianDigits(
-    account.expires_at.toLocaleDateString('fa-IR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }),
-  );
+  const expireDate = account.expires_at.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
 
   const sellerName = account.seller?.user
     ? [account.seller.user.first_name, account.seller.user.last_name].filter(Boolean).join(' ')
@@ -110,7 +108,7 @@ async function renderDetail(ctx: BotContext) {
     `👤 فروشنده: ${sellerName}\n` +
     `📋 پلن: ${planName} ${planType}\n` +
     `🔗 وضعیت: ${statusText}\n` +
-    `📊 مصرف: ${used} از ${limit} (${toPersianDigits(String(percent))}٪)\n` +
+    `📊 مصرف: ${used} از ${limit} (${String(percent)}%)\n` +
     `${progressBar}\n` +
     `⏰ انقضا: ${daysLeft} مانده (${expireDate})\n` +
     `💰 قیمت: ${priceText}\n` +
@@ -271,7 +269,7 @@ adminViewAccountScene.action('edit_note', async (ctx) => {
 
 // --- Text input handler for all edit fields ---
 adminViewAccountScene.on('text', async (ctx) => {
-  const input = ctx.message.text.trim();
+  const input = toEnglishDigits(ctx.message.text.trim());
   const accountId = ctx.session.selectedAccountId;
   if (!accountId || !ctx.session.adminEditField) return;
 

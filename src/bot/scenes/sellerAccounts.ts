@@ -9,7 +9,6 @@ import {
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { toPersianDigits } from '../../core/utils/format';
 
 const PAGE_SIZE = 8;
 
@@ -65,8 +64,8 @@ async function renderAccountList(ctx: BotContext) {
   }
 
   const title = search
-    ? `🔍 نتایج جستجو: "${search}" (${toPersianDigits(String(totalCount))} نتیجه)`
-    : await getMessage('seller.accounts_title', { count: toPersianDigits(String(totalCount)) });
+    ? `🔍 نتایج جستجو: "${search}" (${String(totalCount)} نتیجه)`
+    : await getMessage('seller.accounts_title', { count: String(totalCount) });
 
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
@@ -94,7 +93,7 @@ async function renderAccountList(ctx: BotContext) {
     }
     navButtons.push(
       Markup.button.callback(
-        `صفحه ${toPersianDigits(String(page + 1))} از ${toPersianDigits(String(totalPages))}`,
+        `صفحه ${String(page + 1)} از ${String(totalPages)}`,
         'noop',
       ),
     );

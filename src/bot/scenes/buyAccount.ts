@@ -4,7 +4,7 @@ import { SCENE_BUY_ACCOUNT, SCENE_HOME, SCENE_PAYMENT_PENDING } from './constant
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatBytes, formatPrice, toPersianDigits } from '../../core/utils/format';
+import { formatBytes, formatPrice } from '../../core/utils/format';
 
 export const buyAccountScene = new Scenes.BaseScene<BotContext>(SCENE_BUY_ACCOUNT);
 
@@ -25,7 +25,7 @@ buyAccountScene.enter(async (ctx) => {
   const msg = await getMessage('buy.select_plan');
   const buttons = plans.map((plan) => [
     Markup.button.callback(
-      `🔹 ${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${toPersianDigits(String(plan.duration_days))} روزه - ${formatPrice(plan.price)}`,
+      `🔹 ${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${String(plan.duration_days)} روزه - ${formatPrice(plan.price)}`,
       `select_plan_${plan.id}`,
     ),
   ]);

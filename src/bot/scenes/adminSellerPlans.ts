@@ -5,7 +5,7 @@ import { SCENE_ADMIN_SELLER_PLANS, SCENE_ADMIN_SELLER_DETAIL } from './constants
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatPrice, formatBytes, toPersianDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes, toEnglishDigits } from '../../core/utils/format';
 
 type AddPlanStep = 'idle' | 'type' | 'name' | 'data' | 'price';
 
@@ -60,7 +60,7 @@ async function renderPlanList(ctx: BotContext) {
   }
 
   const lines = plans.map((plan, i) => {
-    const num = toPersianDigits(String(i + 1));
+    const num = String(i + 1);
     const statusIcon = plan.is_active ? '✅' : '❌ غیرفعال';
     const typeLabel = plan.type === 'per_unit' ? '(واحدی)' : '(ثابت)';
     const priceLabel =
@@ -134,7 +134,7 @@ adminSellerPlansScene.action('type_per_unit', async (ctx) => {
 });
 
 adminSellerPlansScene.on('text', async (ctx) => {
-  const input = ctx.message.text.trim();
+  const input = toEnglishDigits(ctx.message.text.trim());
 
   if (addPlanStep === 'name') {
     planDraft.name = input;

@@ -1,29 +1,34 @@
-const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+const PERSIAN_TO_ENGLISH: Record<string, string> = {
+  '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+  '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+  '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+  '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+};
 
-export function toPersianDigits(str: string): string {
-  return str.replace(/[0-9]/g, (d) => PERSIAN_DIGITS[parseInt(d)]);
+export function toEnglishDigits(str: string): string {
+  return str.replace(/[۰-۹٠-٩]/g, (d) => PERSIAN_TO_ENGLISH[d] ?? d);
 }
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1073741824) {
     const gb = (bytes / 1073741824).toFixed(bytes % 1073741824 === 0 ? 0 : 1);
-    return toPersianDigits(gb) + ' GB';
+    return gb + ' GB';
   }
   const mb = (bytes / 1048576).toFixed(0);
-  return toPersianDigits(mb) + ' MB';
+  return mb + ' MB';
 }
 
 export function formatDaysLeft(expiresAt: Date): string {
   const now = new Date();
   const diff = expiresAt.getTime() - now.getTime();
-  if (diff <= 0) return toPersianDigits('0') + ' روز';
+  if (diff <= 0) return '0 روز';
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  return toPersianDigits(String(days)) + ' روز';
+  return String(days) + ' روز';
 }
 
 export function formatPrice(toman: number): string {
   const formatted = toman.toLocaleString('en-US');
-  return toPersianDigits(formatted) + ' تومان';
+  return formatted + ' تومان';
 }
 
 export function buildSubUrl(subBaseUrl: string, proxies: Record<string, unknown>, username: string): string {
@@ -76,5 +81,5 @@ export function formatPercent(used: number, total: number): number {
 export function formatProgressBar(percent: number, width: number = 14): string {
   const filled = Math.round((percent / 100) * width);
   const empty = width - filled;
-  return '█'.repeat(filled) + '░'.repeat(empty) + ' ' + toPersianDigits(String(percent)) + '٪';
+  return '█'.repeat(filled) + '░'.repeat(empty) + ' ' + String(percent) + '%';
 }

@@ -9,7 +9,7 @@ import {
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatPrice, toPersianDigits } from '../../core/utils/format';
+import { formatPrice } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 export const adminSellerDetailScene = new Scenes.BaseScene<BotContext>(
@@ -71,7 +71,7 @@ async function renderDetail(ctx: BotContext) {
 
   const financialLines =
     `\n\n📊 خلاصه مالی:\n` +
-    `اکانت‌ها: ${toPersianDigits(String(totalAccounts))} (${toPersianDigits(String(activeAccounts))} فعال)\n` +
+    `اکانت‌ها: ${String(totalAccounts)} (${String(activeAccounts)} فعال)\n` +
     `بدهی: ${formatPrice(debt)}`;
 
   const text = `${title}\n\n${infoLines}${financialLines}`;

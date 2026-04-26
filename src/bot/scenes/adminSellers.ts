@@ -4,7 +4,7 @@ import { SCENE_ADMIN_SELLERS, SCENE_ADMIN_SELLER_DETAIL, SCENE_HOME } from './co
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatPrice } from '../../core/utils/format';
+import { formatPrice, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 
 export const adminSellersScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_SELLERS);
@@ -77,7 +77,7 @@ adminSellersScene.action('add_seller', async (ctx) => {
 });
 
 adminSellersScene.on('text', async (ctx) => {
-  const input = ctx.message.text.trim();
+  const input = toEnglishDigits(ctx.message.text.trim());
   const chatId = parseInt(input);
 
   if (isNaN(chatId) || chatId <= 0) {

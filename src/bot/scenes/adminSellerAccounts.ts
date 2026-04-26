@@ -5,7 +5,7 @@ import { SCENE_ADMIN_SELLER_ACCOUNTS, SCENE_ADMIN_SELLER_DETAIL, SCENE_ADMIN_VIE
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatPrice, formatBytes, toPersianDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes } from '../../core/utils/format';
 
 const PAGE_SIZE = 8;
 
@@ -108,7 +108,7 @@ async function renderAccountList(ctx: BotContext) {
 
     buttons.push([
       Markup.button.callback(
-        `${toPersianDigits(String(selected.length))} انتخاب شده - جمع: ${formatPrice(selectedTotal)}`,
+        `${String(selected.length)} انتخاب شده - جمع: ${formatPrice(selectedTotal)}`,
         'noop',
       ),
     ]);
@@ -134,7 +134,7 @@ async function renderAccountList(ctx: BotContext) {
     }
     navButtons.push(
       Markup.button.callback(
-        `صفحه ${toPersianDigits(String(page + 1))} از ${toPersianDigits(String(totalPages))}`,
+        `صفحه ${String(page + 1)} از ${String(totalPages)}`,
         'noop',
       ),
     );
@@ -188,7 +188,7 @@ adminSellerAccountsScene.action('settle_selected', async (ctx) => {
   ctx.session.selectedAccountIds = [];
 
   const msg = await getMessage('admin.accounts_settled', {
-    count: toPersianDigits(String(result.count)),
+    count: String(result.count),
   });
 
   // Show settlement confirmation briefly, then re-render list
@@ -213,7 +213,7 @@ adminSellerAccountsScene.action('settle_all', async (ctx) => {
   ctx.session.selectedAccountIds = [];
 
   const msg = await getMessage('admin.accounts_settled', {
-    count: toPersianDigits(String(result.count)),
+    count: String(result.count),
   });
 
   await sendOrEdit(

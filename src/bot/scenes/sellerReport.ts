@@ -4,7 +4,7 @@ import { SCENE_SELLER_REPORT, SCENE_SELLER_PANEL } from './constants';
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatPrice, toPersianDigits } from '../../core/utils/format';
+import { formatPrice } from '../../core/utils/format';
 
 export const sellerReportScene = new Scenes.BaseScene<BotContext>(SCENE_SELLER_REPORT);
 
@@ -40,9 +40,9 @@ sellerReportScene.enter(async (ctx) => {
   const remaining = totalAmount - paidAmount;
 
   const msg = await getMessage('seller.report', {
-    total: toPersianDigits(String(total)),
-    active: toPersianDigits(String(active)),
-    expired: toPersianDigits(String(expired)),
+    total: String(total),
+    active: String(active),
+    expired: String(expired),
     total_amount: formatPrice(totalAmount),
     paid_amount: formatPrice(paidAmount),
     remaining: formatPrice(remaining),

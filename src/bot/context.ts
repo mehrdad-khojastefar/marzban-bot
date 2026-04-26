@@ -12,6 +12,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   sellerId?: number;
   selectedSellerPlanId?: number;
   awaitingQuantity?: boolean;
+  awaitingAccountName?: boolean;
   pendingDataLimit?: number;
   pendingPrice?: number;
   pendingPlanName?: string;

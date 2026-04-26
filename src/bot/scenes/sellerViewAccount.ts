@@ -10,7 +10,6 @@ import {
   formatDaysLeft,
   formatPercent,
   formatProgressBar,
-  toPersianDigits,
   buildSubUrl,
   renameConfigLinks,
 } from '../../core/utils/format';
@@ -76,20 +75,18 @@ async function renderDetail(ctx: BotContext) {
     account.payment_status === 'paid' ? 'پرداخت شده ✅' : 'پرداخت نشده ⬜';
   const noteText = account.note || 'بدون یادداشت';
 
-  const expireDate = toPersianDigits(
-    account.expires_at.toLocaleDateString('fa-IR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }),
-  );
+  const expireDate = account.expires_at.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
 
   let text =
     `${title}\n\n` +
     `📛 نام: ${account.marzban_username}\n` +
     `📋 پلن: ${planName}\n` +
     `🔗 وضعیت: ${statusText}\n` +
-    `📊 مصرف: ${used} از ${limit} (${toPersianDigits(String(percent))}٪)\n` +
+    `📊 مصرف: ${used} از ${limit} (${String(percent)}%)\n` +
     `${progressBar}\n` +
     `⏰ انقضا: ${daysLeft} مانده (${expireDate})\n` +
     `💰 پرداخت: ${paymentText}\n` +
