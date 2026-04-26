@@ -23,7 +23,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   initSettingService(db);
 
   const telegrafOptions: Partial<Telegraf.Options<BotContext>> = {};
-  if (env.SOCKS5_PROXY) {
+  if (env.SOCKS5_PROXY && env.NODE_ENV !== 'production') {
     const agent = new SocksProxyAgent(env.SOCKS5_PROXY);
     telegrafOptions.telegram = { agent: agent as any };
   }
