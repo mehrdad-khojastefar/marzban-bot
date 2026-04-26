@@ -101,7 +101,10 @@ async function renderDetail(ctx: BotContext) {
     );
     text += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
     if (configs.length > 0) {
-      text += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
+      text += `\n📋 کانفیگ‌ها:`;
+      for (const config of configs) {
+        text += `\n<pre>${config}</pre>`;
+      }
     }
   }
 

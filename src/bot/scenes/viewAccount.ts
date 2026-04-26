@@ -61,19 +61,22 @@ viewAccountScene.enter(async (ctx) => {
   }
 
   // Add subscription link + config links
-  if (!isExpired) {
+  if (!isExpired && account.marzban_sub_token) {
     const env = loadEnv();
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, `/sub/${account.marzban_sub_token}`);
     const linkPrefix = account.seller?.link_prefix ?? env.CONFIG_LINK_PREFIX;
     const configs = await fetchAndRenameConfigs(
       env.MARZBAN_SUB_URL,
-      account.marzban_sub_token ?? '',
+      account.marzban_sub_token,
       linkPrefix,
       account.marzban_username,
     );
     text += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
     if (configs.length > 0) {
-      text += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
+      text += `\n📋 کانفیگ‌ها:`;
+      for (const config of configs) {
+        text += `\n<pre>${config}</pre>`;
+      }
     }
   }
 

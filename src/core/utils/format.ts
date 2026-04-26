@@ -63,12 +63,16 @@ export async function fetchAndRenameConfigs(
   try {
     const url = `${marzbanSubUrl.replace(/\/+$/, '')}/sub/${token}`;
     const res = await fetch(url);
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.error(`fetchAndRenameConfigs: Marzban returned ${res.status} for ${url}`);
+      return [];
+    }
     const body = await res.text();
     const decoded = Buffer.from(body.trim(), 'base64').toString('utf-8');
     const links = decoded.split('\n').filter((l) => l.trim().length > 0);
     return renameConfigLinks(links, linkPrefix, username);
-  } catch {
+  } catch (err) {
+    console.error('fetchAndRenameConfigs error:', err);
     return [];
   }
 }

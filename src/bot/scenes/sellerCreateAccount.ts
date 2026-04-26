@@ -115,7 +115,10 @@ async function provisionAccount(ctx: BotContext) {
       marzbanUsername,
     );
     if (configs.length > 0) {
-      configText += `\n📋 کانفیگ:\n<pre>${configs.join('\n')}</pre>`;
+      configText += `\n📋 کانفیگ‌ها:`;
+      for (const config of configs) {
+        configText += `\n<pre>${config}</pre>`;
+      }
     }
 
     await sendOrEdit(
