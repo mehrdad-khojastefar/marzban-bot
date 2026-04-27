@@ -16,13 +16,19 @@ export function initPremzyJwt(config: { vendorId: string; privateKeyPath: string
  * Build a Premzy checkout URL for the given toman amount.
  * Signs a JWT with the vendor's EC private key (ES256 / P-256).
  */
-export function buildCheckoutUrl(tomanAmount: number): string {
+export function buildCheckoutUrl(tomanAmount: number, transactionId: string): string {
   if (!privateKey || !vendorId) {
     throw new Error('Premzy JWT not initialized. Call initPremzyJwt() first.');
   }
 
+  const now = Math.floor(Date.now() / 1000);
   const token = jwt.sign(
-    { vendor_id: vendorId, toman_amount: tomanAmount },
+    {
+      vendor_id: vendorId,
+      toman_amount: tomanAmount,
+      transaction_id: transactionId,
+      iat: now 
+    },
     privateKey,
     { algorithm: 'ES256' },
   );

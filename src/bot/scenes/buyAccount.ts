@@ -191,7 +191,7 @@ async function handlePremzyPayment(
 
   let checkoutUrl: string;
   try {
-    checkoutUrl = buildCheckoutUrl(params.amount);
+    checkoutUrl = buildCheckoutUrl(params.amount, txn.transaction_id);
   } catch (err) {
     console.error('Failed to build Premzy checkout URL:', err);
     await db.transaction.update({

@@ -21,6 +21,7 @@ async function main() {
     vendorToken: env.PREMZY_VENDOR_TOKEN,
     databaseUrl: env.DATABASE_URL,
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
+    socksProxy: env.SOCKS5_PROXY,
   });
 
   console.log('Premzy callback server started.');
