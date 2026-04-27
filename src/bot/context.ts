@@ -7,6 +7,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   selectedPlanId?: number;
   selectedGb?: number;
   pendingPaymentId?: number;
+  pendingTransactionId?: number;
   selectedAccountId?: number;
   awaitingRename?: boolean;
 

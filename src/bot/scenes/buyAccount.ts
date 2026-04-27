@@ -2,15 +2,21 @@ import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { SCENE_BUY_ACCOUNT, SCENE_HOME, SCENE_PAYMENT_PENDING } from './constants';
 import { getMessage } from '../services/messageService';
+import { getSetting } from '../services/settingService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatBytes, formatPrice } from '../../core/utils/format';
-import { BankCard } from '@prisma/client';
+import { BankCard, PaymentMethod, PrismaClient } from '@prisma/client';
+import { buildCheckoutUrl } from '../../premzy/jwt';
 
 const GB = 1073741824;
 const GB_OPTIONS = [1, 2, 3, 5, 10, 20, 50, 100];
 
-/** Pick a random active bank card. Returns null if none exist. */
+async function getPaymentMethod(): Promise<PaymentMethod> {
+  const method = await getSetting('payment_method');
+  return method === 'premzy' ? 'premzy' : 'manual';
+}
+
 async function pickRandomCard(): Promise<BankCard | null> {
   const db = getDb();
   const cards = await db.bankCard.findMany({ where: { is_active: true } });
@@ -51,7 +57,6 @@ buyAccountScene.enter(async (ctx) => {
   const group = user.plan_group;
 
   if (group.type === 'per_gb') {
-    // Per-GB flow: show GB picker
     const msg = await getMessage('buy.select_gb');
     const priceInfo = `هر گیگابایت ${formatPrice(group.price_per_gb!)}`;
 
@@ -66,7 +71,6 @@ buyAccountScene.enter(async (ctx) => {
 
     await sendOrEdit(ctx, `${msg}\n\n${priceInfo}`, Markup.inlineKeyboard(rows));
   } else {
-    // Fixed flow: show plan list
     const plans = group.plans;
     if (plans.length === 0) {
       const msg = await getMessage('buy.no_plans');
@@ -91,7 +95,7 @@ buyAccountScene.enter(async (ctx) => {
   }
 });
 
-// Per-GB: user picks GB count
+// ── Per-GB selection ──────────────────────────────────────────────
 buyAccountScene.action(/^select_gb_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery('⏳ در حال پردازش...');
   const gb = parseInt(ctx.match[1]);
@@ -107,44 +111,22 @@ buyAccountScene.action(/^select_gb_(\d+)$/, async (ctx) => {
     return;
   }
 
-  const card = await pickRandomCard();
-  if (!card) {
-    const noCardMsg = await getMessage('buy.no_card');
-    await sendOrEdit(
-      ctx,
-      noCardMsg,
-      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
-    );
-    return;
-  }
-
   const amount = gb * user.plan_group.price_per_gb!;
   const dataLimit = BigInt(gb) * BigInt(GB);
+  const durationDays = user.plan_group.duration_days;
+  const method = await getPaymentMethod();
 
-  const payment = await db.payment.create({
-    data: {
-      user_id: user.id,
-      plan_id: null,
-      bank_card_id: card.id,
-      amount,
-      data_limit: dataLimit,
-      status: 'pending',
-    },
+  await handlePayment(ctx, {
+    userId: user.id,
+    planId: null,
+    dataLimit,
+    durationDays,
+    amount,
+    method,
   });
-
-  ctx.session.selectedGb = gb;
-  ctx.session.pendingPaymentId = payment.id;
-
-  const msg = await getMessage('buy.payment_instructions');
-  await sendOrEdit(
-    ctx,
-    `${msg}\n\nمبلغ: ${formatPrice(amount)}\nشماره کارت:\n<code>${formatCardNumber(card.card_number)}</code>\nبه نام: ${card.holder_name}\n\nپس از واریز، رسید خود را ارسال کنید.`,
-  );
-
-  await ctx.scene.enter(SCENE_PAYMENT_PENDING);
 });
 
-// Fixed: user picks a plan
+// ── Fixed plan selection ──────────────────────────────────────────
 buyAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery('⏳ در حال پردازش...');
   const planId = parseInt(ctx.match[1]);
@@ -156,6 +138,98 @@ buyAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
     return;
   }
 
+  const method = await getPaymentMethod();
+
+  await handlePayment(ctx, {
+    userId: ctx.session.userId!,
+    planId: plan.id,
+    dataLimit: plan.data_limit,
+    durationDays: plan.duration_days,
+    amount: plan.price,
+    method,
+  });
+});
+
+// ── Shared payment handler ────────────────────────────────────────
+interface PaymentParams {
+  userId: number;
+  planId: number | null;
+  dataLimit: bigint;
+  durationDays: number;
+  amount: number;
+  method: PaymentMethod;
+}
+
+async function handlePayment(ctx: BotContext, params: PaymentParams): Promise<void> {
+  const db = getDb();
+
+  if (params.method === 'premzy') {
+    await handlePremzyPayment(ctx, db, params);
+  } else {
+    await handleManualPayment(ctx, db, params);
+  }
+}
+
+async function handlePremzyPayment(
+  ctx: BotContext,
+  db: PrismaClient,
+  params: PaymentParams,
+): Promise<void> {
+  const txn = await db.transaction.create({
+    data: {
+      user_id: params.userId,
+      plan_id: params.planId,
+      data_limit: params.dataLimit,
+      duration_days: params.durationDays,
+      amount: params.amount,
+      method: 'premzy',
+      status: 'checkout',
+    },
+  });
+
+  ctx.session.pendingTransactionId = txn.id;
+
+  let checkoutUrl: string;
+  try {
+    checkoutUrl = buildCheckoutUrl(params.amount);
+  } catch (err) {
+    console.error('Failed to build Premzy checkout URL:', err);
+    await db.transaction.update({
+      where: { id: txn.id },
+      data: { status: 'failed', error_message: 'Failed to build checkout URL' },
+    });
+    await sendOrEdit(ctx, '❌ خطا در ایجاد لینک پرداخت. لطفاً دوباره تلاش کنید.',
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
+    return;
+  }
+
+  const dataLabel = formatBytes(Number(params.dataLimit));
+  const priceLabel = formatPrice(params.amount);
+
+  const msg =
+    `🛒 سفارش شما:\n` +
+    `📦 حجم: ${dataLabel}\n` +
+    `💰 مبلغ: ${priceLabel}\n\n` +
+    `⚠️ <b>قبل از باز کردن لینک، VPN خود را خاموش کنید.</b>\n` +
+    `⚠️ مبلغ نهایی ممکن است کمی متفاوت باشد.\n\n` +
+    `برای پرداخت روی دکمه زیر کلیک کنید:`;
+
+  await sendOrEdit(
+    ctx,
+    msg,
+    Markup.inlineKeyboard([
+      [Markup.button.url('💳 پرداخت', checkoutUrl)],
+      [Markup.button.callback('❌ انصراف', 'cancel_checkout')],
+    ]),
+  );
+}
+
+async function handleManualPayment(
+  ctx: BotContext,
+  db: PrismaClient,
+  params: PaymentParams,
+): Promise<void> {
   const card = await pickRandomCard();
   if (!card) {
     const noCardMsg = await getMessage('buy.no_card');
@@ -167,26 +241,43 @@ buyAccountScene.action(/^select_plan_(\d+)$/, async (ctx) => {
     return;
   }
 
-  const payment = await db.payment.create({
+  const txn = await db.transaction.create({
     data: {
-      user_id: ctx.session.userId!,
-      plan_id: plan.id,
+      user_id: params.userId,
+      plan_id: params.planId,
+      data_limit: params.dataLimit,
+      duration_days: params.durationDays,
+      amount: params.amount,
+      method: 'manual',
+      status: 'awaiting_receipt',
       bank_card_id: card.id,
-      amount: plan.price,
-      status: 'pending',
     },
   });
 
-  ctx.session.selectedPlanId = plan.id;
-  ctx.session.pendingPaymentId = payment.id;
+  ctx.session.pendingTransactionId = txn.id;
 
-  const msg = await getMessage('buy.payment_instructions');
+  const instrMsg = await getMessage('buy.payment_instructions');
   await sendOrEdit(
     ctx,
-    `${msg}\n\nمبلغ: ${formatPrice(plan.price)}\nشماره کارت:\n<code>${formatCardNumber(card.card_number)}</code>\nبه نام: ${card.holder_name}\n\nپس از واریز، رسید خود را ارسال کنید.`,
+    `${instrMsg}\n\nمبلغ: ${formatPrice(params.amount)}\nشماره کارت:\n<code>${formatCardNumber(card.card_number)}</code>\nبه نام: ${card.holder_name}\n\nپس از واریز، رسید خود را ارسال کنید.`,
   );
 
   await ctx.scene.enter(SCENE_PAYMENT_PENDING);
+}
+
+// ── Cancel checkout (premzy) ──────────────────────────────────────
+buyAccountScene.action('cancel_checkout', async (ctx) => {
+  await ctx.answerCbQuery();
+  const txnId = ctx.session.pendingTransactionId;
+  if (txnId) {
+    const db = getDb();
+    await db.transaction.update({
+      where: { id: txnId },
+      data: { status: 'cancelled' },
+    });
+  }
+  ctx.session.pendingTransactionId = undefined;
+  await ctx.scene.enter(SCENE_HOME);
 });
 
 buyAccountScene.action('back', async (ctx) => {

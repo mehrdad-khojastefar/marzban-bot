@@ -1,164 +1,134 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
-import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { extractSubToken, buildSubUrl, fetchAndRenameConfigs, formatBytes, formatDaysLeft } from '../../core/utils/format';
+import { provisionAccount, buildFullAccountNotification } from '../../core/provision';
+import { formatBytes } from '../../core/utils/format';
 import { getMessage } from '../services/messageService';
-import { loadEnv } from '../../core/utils/config';
-
-function generateUsername(): string {
-  const rand = Math.floor(100000 + Math.random() * 900000); // 6-digit random
-  return `dove_${rand}`;
-}
 
 export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
   const adminChatId = process.env.ADMIN_CHAT_ID;
 
-  bot.action(/^approve_payment_(\d+)$/, async (ctx) => {
+  // ── Approve (Transaction-based) ─────────────────────────────────
+  bot.action(/^approve_txn_(\d+)$/, async (ctx) => {
     if (String(ctx.from!.id) !== adminChatId) return;
     await ctx.answerCbQuery('⏳ در حال ساخت اکانت...');
 
-    const paymentId = parseInt(ctx.match[1]);
+    const txnId = parseInt(ctx.match[1]);
     const db = getDb();
 
-    const payment = await db.payment.findUnique({
-      where: { id: paymentId },
-      include: { user: { include: { plan_group: true } }, plan: true },
+    const txn = await db.transaction.findUnique({
+      where: { id: txnId },
+      include: { user: true, plan: true },
     });
 
-    if (!payment || payment.status !== 'awaiting_approval') {
-      await ctx.editMessageCaption('⚠️ این پرداخت قبلاً پردازش شده است.');
+    if (!txn || txn.status !== 'awaiting_approval') {
+      await ctx.editMessageCaption('⚠️ این تراکنش قبلاً پردازش شده است.');
       return;
     }
 
-    // Determine data_limit and duration based on plan (fixed) or per_gb payment
+    // Determine data limit and duration
     let dataLimit: number;
     let durationDays: number;
+    let planLabel: string;
 
-    if (payment.plan) {
-      dataLimit = Number(payment.plan.data_limit);
-      durationDays = payment.plan.duration_days;
+    if (txn.plan) {
+      dataLimit = Number(txn.plan.data_limit);
+      durationDays = txn.plan.duration_days;
+      planLabel = txn.plan.name;
     } else {
-      dataLimit = Number(payment.data_limit ?? 0);
-      durationDays = payment.user.plan_group?.duration_days ?? 30;
+      dataLimit = Number(txn.data_limit ?? 0);
+      durationDays = txn.duration_days;
+      planLabel = formatBytes(dataLimit);
     }
 
-    const expireTimestamp =
-      Math.floor(Date.now() / 1000) + durationDays * 24 * 60 * 60;
+    // Mark as provisioning
+    await db.transaction.update({
+      where: { id: txnId },
+      data: { status: 'provisioning', reviewed_by: BigInt(ctx.from!.id) },
+    });
 
-    // Create Marzban account FIRST — only mark as approved after success
-    let marzbanUsername: string;
-    let subToken: string;
+    // Provision the account
+    let result;
     try {
-      const marzban = getMarzban();
-      marzbanUsername = generateUsername();
-      const { proxies, inbounds } = await buildProxiesAndInbounds();
-
-      const marzbanUser = await marzban.addUser({
-        username: marzbanUsername,
-        proxies,
-        inbounds,
-        data_limit: dataLimit,
-        expire: expireTimestamp,
-        status: 'active',
+      result = await provisionAccount(db, {
+        transactionId: txnId,
+        userId: txn.user_id,
+        planId: txn.plan_id,
+        dataLimit,
+        durationDays,
+        amount: txn.amount,
       });
-
-      subToken = extractSubToken(marzbanUser.subscription_url);
     } catch (err) {
-      console.error('Marzban account creation failed:', err);
+      console.error('Account provisioning failed:', err);
+      await db.transaction.update({
+        where: { id: txnId },
+        data: {
+          status: 'failed',
+          error_message: err instanceof Error ? err.message : String(err),
+        },
+      });
       await ctx.editMessageCaption(
         '❌ خطا در ساخت اکانت مرزبان. لطفاً دوباره تلاش کنید.',
         Markup.inlineKeyboard([
           [
-            Markup.button.callback('🔄 تلاش مجدد', `approve_payment_${paymentId}`),
-            Markup.button.callback('❌ رد', `reject_payment_${paymentId}`),
+            Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
+            Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
           ],
         ]),
       );
       return;
     }
 
-    // Marzban succeeded — now mark as approved and save account
-    await db.payment.update({
-      where: { id: paymentId },
-      data: { status: 'approved', reviewed_by: BigInt(ctx.from!.id) },
-    });
-
-    await db.account.create({
-      data: {
-        user_id: payment.user_id,
-        plan_id: payment.plan_id,
-        marzban_username: marzbanUsername,
-        marzban_sub_token: subToken,
-        type: 'paid',
-        payment_status: 'paid',
-        price: payment.amount,
-        expires_at: new Date(expireTimestamp * 1000),
-      },
-    });
-
-    // Notify user with account details
-    const env = loadEnv();
-    const planLabel = payment.plan
-      ? payment.plan.name
-      : `${String(dataLimit / 1073741824)} گیگ`;
-    const expiresAt = new Date(expireTimestamp * 1000);
-
-    let userMsg =
-      `✅ اکانت شما ساخته شد!\n\n` +
-      `📛 نام: ${marzbanUsername}\n` +
-      `📦 حجم: ${formatBytes(dataLimit)}\n` +
-      `⏰ انقضا: ${formatDaysLeft(expiresAt)}\n` +
-      `📋 پلن: ${planLabel}`;
-
-    if (subToken) {
-      const subUrl = buildSubUrl(env.SUB_BASE_URL, `/sub/${subToken}`);
-      const linkPrefix = env.CONFIG_LINK_PREFIX;
-      const configs = await fetchAndRenameConfigs(
-        env.MARZBAN_SUB_URL,
-        subToken,
-        linkPrefix,
-        marzbanUsername,
-      );
-      userMsg += `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
-      if (configs.length > 0) {
-        userMsg += `\n📋 کانفیگ‌ها:`;
-        for (const config of configs) {
-          userMsg += `\n<pre>${config}</pre>`;
-        }
-      }
+    // Notify user
+    try {
+      const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
+      await ctx.telegram.sendMessage(txn.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+    } catch (notifyErr) {
+      console.error(`Failed to notify user ${txn.user.chat_id}:`, notifyErr);
     }
 
-    await ctx.telegram.sendMessage(payment.user.chat_id.toString(), userMsg, {
-      parse_mode: 'HTML',
+    await ctx.editMessageCaption(`✅ تأیید شد - اکانت ${result.marzbanUsername} ساخته شد.`);
+  });
+
+  // ── Reject (Transaction-based) ──────────────────────────────────
+  bot.action(/^reject_txn_(\d+)$/, async (ctx) => {
+    if (String(ctx.from!.id) !== adminChatId) return;
+    await ctx.answerCbQuery();
+
+    const txnId = parseInt(ctx.match[1]);
+    const db = getDb();
+
+    const txn = await db.transaction.findUnique({
+      where: { id: txnId },
+      include: { user: true },
     });
-    await ctx.editMessageCaption(`✅ تأیید شد - اکانت ${marzbanUsername} ساخته شد.`);
+
+    if (!txn || !['awaiting_approval', 'failed'].includes(txn.status)) {
+      await ctx.editMessageCaption('⚠️ این تراکنش قبلاً پردازش شده است.');
+      return;
+    }
+
+    await db.transaction.update({
+      where: { id: txnId },
+      data: { status: 'rejected', reviewed_by: BigInt(ctx.from!.id) },
+    });
+
+    const rejectedMsg = await getMessage('payment.rejected');
+    await ctx.telegram.sendMessage(txn.user.chat_id.toString(), rejectedMsg);
+    await ctx.editMessageCaption('❌ رد شد.');
+  });
+
+  // ── Legacy: approve/reject old Payment records ──────────────────
+  // Keep for backward compatibility with existing pending payments
+  bot.action(/^approve_payment_(\d+)$/, async (ctx) => {
+    if (String(ctx.from!.id) !== adminChatId) return;
+    await ctx.answerCbQuery();
+    await ctx.editMessageCaption('⚠️ این پرداخت از سیستم قدیمی است. لطفاً از طریق پنل ادمین بررسی کنید.');
   });
 
   bot.action(/^reject_payment_(\d+)$/, async (ctx) => {
     if (String(ctx.from!.id) !== adminChatId) return;
     await ctx.answerCbQuery();
-
-    const paymentId = parseInt(ctx.match[1]);
-    const db = getDb();
-
-    const payment = await db.payment.findUnique({
-      where: { id: paymentId },
-      include: { user: true },
-    });
-
-    if (!payment || payment.status !== 'awaiting_approval') {
-      await ctx.editMessageCaption('⚠️ این پرداخت قبلاً پردازش شده است.');
-      return;
-    }
-
-    await db.payment.update({
-      where: { id: paymentId },
-      data: { status: 'rejected', reviewed_by: BigInt(ctx.from!.id) },
-    });
-
-    const rejectedMsg = await getMessage('payment.rejected');
-    await ctx.telegram.sendMessage(payment.user.chat_id.toString(), rejectedMsg);
-    await ctx.editMessageCaption('❌ رد شد.');
+    await ctx.editMessageCaption('⚠️ این پرداخت از سیستم قدیمی است. لطفاً از طریق پنل ادمین بررسی کنید.');
   });
 }

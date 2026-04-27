@@ -109,6 +109,7 @@ const defaultMessages: { key: string; text: string }[] = [
 
 const defaultSettings: { key: string; value: string }[] = [
   { key: 'buy_enabled', value: 'false' },
+  { key: 'payment_method', value: 'manual' }, // 'manual' or 'premzy'
 ];
 
 function generateCode(): string {

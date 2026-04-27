@@ -13,6 +13,12 @@ export const envSchema = z.object({
   MARZBAN_SUB_URL: z.string().url(),
   SUB_PORT: z.string().default('8085'),
   CONFIG_LINK_PREFIX: z.string().default('🕊️ 🇩🇪  DE|'),
+  // Premzy payment gateway (optional — only needed when payment_method = premzy)
+  PREMZY_VENDOR_ID: z.string().optional(),
+  PREMZY_VENDOR_TOKEN: z.string().optional(),
+  PREMZY_EC_PRIVATE_KEY_PATH: z.string().optional(),
+  PREMZY_CALLBACK_PORT: z.string().default('8086'),
+
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
 });

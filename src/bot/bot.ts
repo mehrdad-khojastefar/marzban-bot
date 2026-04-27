@@ -6,6 +6,7 @@ import { initDb } from '../core/db';
 import { initMarzban } from '../core/marzban';
 import { initMessageService } from './services/messageService';
 import { initSettingService } from './services/settingService';
+import { initPremzyJwt } from '../premzy/jwt';
 import { createStage, SCENE_START } from './scenes';
 import { errorHandler } from './middlewares';
 import { registerAdminPaymentHandler } from './handlers';
@@ -21,6 +22,19 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   });
   initMessageService(db);
   initSettingService(db);
+
+  // Initialize Premzy JWT signing if configured
+  if (env.PREMZY_VENDOR_ID && env.PREMZY_EC_PRIVATE_KEY_PATH) {
+    try {
+      initPremzyJwt({
+        vendorId: env.PREMZY_VENDOR_ID,
+        privateKeyPath: env.PREMZY_EC_PRIVATE_KEY_PATH,
+      });
+      console.log('Premzy JWT initialized.');
+    } catch (err) {
+      console.warn('Premzy JWT not available:', (err as Error).message);
+    }
+  }
 
   const telegrafOptions: Partial<Telegraf.Options<BotContext>> = {};
   if (env.SOCKS5_PROXY && env.NODE_ENV !== 'production') {

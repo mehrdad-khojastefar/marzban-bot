@@ -19,8 +19,8 @@ paymentPendingScene.enter(async (ctx) => {
 });
 
 paymentPendingScene.on('photo', async (ctx) => {
-  const paymentId = ctx.session.pendingPaymentId;
-  if (!paymentId) {
+  const txnId = ctx.session.pendingTransactionId;
+  if (!txnId) {
     await ctx.scene.enter(SCENE_HOME);
     return;
   }
@@ -29,32 +29,33 @@ paymentPendingScene.on('photo', async (ctx) => {
   const fileId = photo[photo.length - 1].file_id;
   const db = getDb();
 
-  await db.payment.update({
-    where: { id: paymentId },
+  await db.transaction.update({
+    where: { id: txnId },
     data: { receipt_file_id: fileId, status: 'awaiting_approval' },
   });
 
-  const payment = await db.payment.findUnique({
-    where: { id: paymentId },
+  const txn = await db.transaction.findUnique({
+    where: { id: txnId },
     include: { user: true, plan: true },
   });
 
   const adminChatId = process.env.ADMIN_CHAT_ID;
-  if (adminChatId && payment) {
-    const planLabel = payment.plan
-      ? payment.plan.name
-      : formatBytes(Number(payment.data_limit ?? 0));
+  if (adminChatId && txn) {
+    const planLabel = txn.plan
+      ? txn.plan.name
+      : formatBytes(Number(txn.data_limit ?? 0));
 
     await ctx.telegram.sendPhoto(adminChatId, fileId, {
       caption:
         `💳 درخواست پرداخت جدید\n\n` +
-        `کاربر: ${payment.user.first_name} (@${payment.user.username ?? 'N/A'})\n` +
+        `کاربر: ${txn.user.first_name} (@${txn.user.username ?? 'N/A'})\n` +
         `پلن: ${planLabel}\n` +
-        `مبلغ: ${payment.amount} تومان`,
+        `مبلغ: ${txn.amount} تومان\n` +
+        `شناسه: #${String(txn.id)}`,
       ...Markup.inlineKeyboard([
         [
-          Markup.button.callback('✅ تأیید', `approve_payment_${paymentId}`),
-          Markup.button.callback('❌ رد', `reject_payment_${paymentId}`),
+          Markup.button.callback('✅ تأیید', `approve_txn_${txn.id}`),
+          Markup.button.callback('❌ رد', `reject_txn_${txn.id}`),
         ],
       ]),
     });
@@ -75,10 +76,11 @@ paymentPendingScene.on('message', async (ctx) => {
 
 paymentPendingScene.action('cancel_payment', async (ctx) => {
   await ctx.answerCbQuery();
-  const paymentId = ctx.session.pendingPaymentId;
-  if (paymentId) {
+  const txnId = ctx.session.pendingTransactionId;
+  if (txnId) {
     const db = getDb();
-    await db.payment.update({ where: { id: paymentId }, data: { status: 'cancelled' } });
+    await db.transaction.update({ where: { id: txnId }, data: { status: 'cancelled' } });
   }
+  ctx.session.pendingTransactionId = undefined;
   await ctx.scene.enter(SCENE_HOME);
 });
