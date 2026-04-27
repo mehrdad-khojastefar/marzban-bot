@@ -21,7 +21,7 @@ COPY tsconfig.json package.json ./
 COPY src ./src
 
 RUN npx tsc -p tsconfig.json || true \
- && test -f dist/bot/main.js && test -f dist/sub/main.js \
+ && test -f dist/bot/main.js && test -f dist/sub/main.js && test -f dist/premzy/main.js \
  && find dist -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js.map' | xargs rm -f
 
 # --- Stage 3: Production dependencies only ---
