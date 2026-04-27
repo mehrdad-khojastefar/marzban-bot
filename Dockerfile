@@ -6,7 +6,8 @@ WORKDIR /app
 COPY package.json yarn.lock ./
 COPY prisma ./prisma/
 
-RUN yarn install --frozen-lockfile --production=false \
+RUN yarn config set registry https://registry.yarnpkg.com \
+ && yarn install --frozen-lockfile --production=false \
  && npx prisma generate --config prisma/prisma.config.ts \
  && yarn cache clean
 
@@ -32,7 +33,8 @@ WORKDIR /app
 COPY package.json yarn.lock ./
 COPY prisma ./prisma/
 
-RUN yarn install --frozen-lockfile --production \
+RUN yarn config set registry https://registry.yarnpkg.com \
+ && yarn install --frozen-lockfile --production \
  && npx prisma generate --config prisma/prisma.config.ts \
  && yarn cache clean
 
