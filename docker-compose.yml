@@ -46,6 +46,24 @@ services:
     environment:
       DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
 
+  premzy:
+    image: ghcr.io/mehrdad-khojastefar/marzban-bot:main
+    restart: unless-stopped
+    command: ["node", "dist/premzy/main.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PREMZY_CALLBACK_PORT:-8086}:${PREMZY_CALLBACK_PORT:-8086}"
+    env_file: .env
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      DATABASE_URL: postgresql://marzban_bot:marzban_bot@db:5432/marzban_bot
+    volumes:
+      - ./keys:/app/keys:ro
+
   migrate:
     image: ghcr.io/mehrdad-khojastefar/marzban-bot:main
     command: ["npx", "prisma", "migrate", "deploy", "--config", "prisma/prisma.config.ts"]
