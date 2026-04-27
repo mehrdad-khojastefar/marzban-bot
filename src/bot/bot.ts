@@ -31,13 +31,21 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   const bot = new Telegraf<BotContext>(env.TELEGRAM_BOT_TOKEN, telegrafOptions);
   const stage = createStage();
 
+  // Global intercept: 🏠 منو اصلی and /start always work, even inside scenes.
+  // Registered on the stage so it runs after stage setup but before scene handlers.
+  stage.hears('🏠 منو اصلی', (ctx) => ctx.scene.enter(SCENE_START));
+  stage.command('start', (ctx) => ctx.scene.enter(SCENE_START));
+
   bot.use(session());
   bot.use(errorHandler());
   bot.use(stage.middleware());
 
-  bot.command('start', (ctx) => ctx.scene.enter(SCENE_START));
-  bot.hears('🏠 منو اصلی', (ctx) => ctx.scene.enter(SCENE_START));
   registerAdminPaymentHandler(bot);
+
+  // Catch-all for any unhandled errors that bypass the middleware
+  bot.catch((err, ctx) => {
+    console.error(`Unhandled bot error [user=${ctx.from?.id}]:`, err);
+  });
 
   return bot;
 }

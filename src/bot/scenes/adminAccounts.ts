@@ -35,7 +35,7 @@ async function renderAccountList(ctx: BotContext) {
   const filter = ctx.session.accountFilter ?? 'all';
   const search = ctx.session.searchQuery;
 
-  const where: Prisma.AccountWhereInput = { seller_id: { not: null } };
+  const where: Prisma.AccountWhereInput = {};
 
   if (filter === 'unpaid') {
     where.payment_status = 'unpaid';
@@ -56,6 +56,7 @@ async function renderAccountList(ctx: BotContext) {
       include: {
         seller_plan: true,
         seller: { include: { user: true } },
+        user: true,
       },
       orderBy: { created_at: 'desc' },
       skip: page * PAGE_SIZE,
@@ -66,10 +67,10 @@ async function renderAccountList(ctx: BotContext) {
 
   // Stats
   const [totalAccounts, unpaidCount, unpaidSum] = await Promise.all([
-    db.account.count({ where: { seller_id: { not: null } } }),
-    db.account.count({ where: { seller_id: { not: null }, payment_status: 'unpaid' } }),
+    db.account.count(),
+    db.account.count({ where: { payment_status: 'unpaid' } }),
     db.account.findMany({
-      where: { seller_id: { not: null }, payment_status: 'unpaid' },
+      where: { payment_status: 'unpaid' },
       select: { price: true },
     }),
   ]);
@@ -118,13 +119,14 @@ async function renderAccountList(ctx: BotContext) {
 
   for (const account of accounts) {
     const isPaid = account.payment_status === 'paid';
-    const statusIcon = isPaid ? '✅' : '⬜';
+    const statusIcon = isPaid ? '✅' : account.payment_status === 'unpaid' ? '⬜' : '👤';
     const price = account.price ? formatPrice(account.price) : '—';
-    const sellerName = account.seller?.user
+    const owner = account.seller?.user
       ? account.seller.user.first_name
-      : String(account.seller?.chat_id ?? '?');
+      : account.user.first_name;
+    const typeTag = account.seller_id ? '🏪' : (account.type === 'test' ? '🧪' : '💳');
 
-    const label = `${statusIcon} ${account.marzban_username} | ${sellerName} | ${price}`;
+    const label = `${statusIcon}${typeTag} ${account.marzban_username} | ${owner} | ${price}`;
     buttons.push([Markup.button.callback(label, `view_${account.id}`)]);
   }
 

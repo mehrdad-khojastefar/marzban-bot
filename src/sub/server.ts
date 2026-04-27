@@ -36,8 +36,16 @@ export async function startSubServer(config: SubServerConfig): Promise<http.Serv
         include: { seller: true },
       });
 
+      if (!account) {
+        console.warn(`Sub proxy: no account found for token=${token}`);
+      }
+
       const linkPrefix = account?.seller?.link_prefix ?? config.defaultLinkPrefix;
-      const username = account?.marzban_username ?? '';
+      let username = account?.marzban_username ?? '';
+      if (account?.display_name) {
+        const suffix = account.marzban_username.split('_').pop() ?? '';
+        username = `${account.display_name}_${suffix}`;
+      }
 
       // 2. Fetch the subscription from Marzban's internal sub endpoint
       const marzbanUrl = `${config.marzbanSubUrl}/sub/${token}`;

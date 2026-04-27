@@ -1,6 +1,7 @@
 import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import {
+  SCENE_START,
   SCENE_HOME,
   SCENE_MANAGE_ACCOUNTS,
   SCENE_TEST_ACCOUNT,
@@ -9,6 +10,9 @@ import {
   SCENE_SELLER_PANEL,
   SCENE_ADMIN_SELLERS,
   SCENE_ADMIN_ACCOUNTS,
+  SCENE_ADMIN_BANK_CARDS,
+  SCENE_ADMIN_USERS,
+  SCENE_ADMIN_PLAN_GROUPS,
 } from './constants';
 import { getMessage } from '../services/messageService';
 import { getSetting } from '../services/settingService';
@@ -41,6 +45,9 @@ homeScene.enter(async (ctx) => {
       Markup.inlineKeyboard([
         [Markup.button.callback('👥 مدیریت فروشندگان', 'admin_sellers')],
         [Markup.button.callback('📋 مدیریت اکانت‌ها', 'admin_accounts')],
+        [Markup.button.callback('💳 مدیریت کارت‌ها', 'admin_bank_cards')],
+        [Markup.button.callback('👤 مدیریت کاربران', 'admin_users')],
+        [Markup.button.callback('📦 مدیریت پلن‌گروپ‌ها', 'admin_plan_groups')],
       ]),
     );
     return;
@@ -74,6 +81,10 @@ homeScene.enter(async (ctx) => {
 
 homeScene.action('manage_accounts', async (ctx) => {
   await ctx.answerCbQuery();
+  if (!ctx.session.userId) {
+    await ctx.scene.enter(SCENE_START);
+    return;
+  }
   await ctx.scene.enter(SCENE_MANAGE_ACCOUNTS);
 });
 
@@ -83,6 +94,11 @@ homeScene.action('test_account', async (ctx) => {
 });
 
 homeScene.action('buy_account', async (ctx) => {
+  if (!ctx.session.userId) {
+    await ctx.answerCbQuery();
+    await ctx.scene.enter(SCENE_START);
+    return;
+  }
   const buyEnabled = await getSetting('buy_enabled');
   if (buyEnabled !== 'true') {
     const disabledMsg = await getMessage('buy.disabled');
@@ -111,4 +127,19 @@ homeScene.action('admin_sellers', async (ctx) => {
 homeScene.action('admin_accounts', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.scene.enter(SCENE_ADMIN_ACCOUNTS);
+});
+
+homeScene.action('admin_bank_cards', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_BANK_CARDS);
+});
+
+homeScene.action('admin_users', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_USERS);
+});
+
+homeScene.action('admin_plan_groups', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_PLAN_GROUPS);
 });

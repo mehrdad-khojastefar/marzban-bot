@@ -5,8 +5,10 @@ export interface SessionData extends Scenes.SceneSessionData {
   userId?: number;
   greeting?: string;
   selectedPlanId?: number;
+  selectedGb?: number;
   pendingPaymentId?: number;
   selectedAccountId?: number;
+  awaitingRename?: boolean;
 
   // seller flows
   sellerId?: number;
@@ -24,6 +26,22 @@ export interface SessionData extends Scenes.SceneSessionData {
   adminCreateChatId?: number;
   adminCreateDataLimit?: number;
   adminCreateDuration?: number;
+
+  // admin bank card management
+  adminCardStep?: 'number' | 'holder' | 'bank';
+  pendingCardNumber?: string;
+  pendingCardHolder?: string;
+  managingCardId?: number;
+
+  // admin user management
+  adminUserStep?: 'chat_id' | 'select_card';
+  pendingUserChatId?: string;
+  managingUserId?: number;
+
+  // admin plan group management
+  adminPlanStep?: 'gb' | 'price';
+  pendingPlanGb?: number;
+  managingGroupId?: number;
 
   // admin seller management
   managingSellerId?: number;

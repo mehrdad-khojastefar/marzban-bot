@@ -22,3 +22,6 @@ export const SCENE_ADMIN_SELLER_PLANS = 'scene:admin_seller_plans';
 export const SCENE_ADMIN_SELLER_ACCOUNTS = 'scene:admin_seller_accounts';
 export const SCENE_ADMIN_VIEW_ACCOUNT = 'scene:admin_view_account';
 export const SCENE_ADMIN_ACCOUNTS = 'scene:admin_accounts';
+export const SCENE_ADMIN_BANK_CARDS = 'scene:admin_bank_cards';
+export const SCENE_ADMIN_USERS = 'scene:admin_users';
+export const SCENE_ADMIN_PLAN_GROUPS = 'scene:admin_plan_groups';

@@ -10,6 +10,7 @@ import { formatBytes, formatDaysLeft } from '../../core/utils/format';
 export const manageAccountsScene = new Scenes.BaseScene<BotContext>(SCENE_MANAGE_ACCOUNTS);
 
 manageAccountsScene.enter(async (ctx) => {
+  await sendOrEdit(ctx, '⏳ در حال بارگذاری...');
   const db = getDb();
   const accounts = await db.account.findMany({
     where: { user_id: ctx.session.userId! },
@@ -31,19 +32,20 @@ manageAccountsScene.enter(async (ctx) => {
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
   for (const account of accounts) {
+    const label = account.display_name
+      ? `${account.display_name}_${account.marzban_username.split('_').pop()}`
+      : account.marzban_username;
     try {
       const marzbanUser = await marzban.getUser(account.marzban_username);
       const used = formatBytes(marzbanUser.used_traffic);
-      const limit = account.plan ? formatBytes(Number(account.plan.data_limit)) : 'نامحدود';
+      const limit = marzbanUser.data_limit ? formatBytes(marzbanUser.data_limit) : 'نامحدود';
       const daysLeft = formatDaysLeft(account.expires_at);
-      const name = account.plan?.name ?? 'تستی';
 
-      lines.push(`🔹 ${name}\n   📊 ${used}/${limit} | ⏰ ${daysLeft} باقی‌مانده`);
-      buttons.push([Markup.button.callback(name, `view_account_${account.id}`)]);
+      lines.push(`🔹 ${label}\n   📊 ${used}/${limit} | ⏰ ${daysLeft} باقی‌مانده`);
+      buttons.push([Markup.button.callback(label, `view_account_${account.id}`)]);
     } catch {
-      const name = account.plan?.name ?? 'تستی';
-      lines.push(`🔹 ${name}\n   ⚠️ خطا در دریافت اطلاعات`);
-      buttons.push([Markup.button.callback(name, `view_account_${account.id}`)]);
+      lines.push(`🔹 ${label}\n   ⚠️ خطا در دریافت اطلاعات`);
+      buttons.push([Markup.button.callback(label, `view_account_${account.id}`)]);
     }
   }
 

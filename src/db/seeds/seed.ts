@@ -1,27 +1,27 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import crypto from 'node:crypto';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-const defaultPlans = [
-  { name: '۱ ماهه - ۲۰ گیگ', data_limit: BigInt(20 * 1073741824), duration_days: 30, price: 50000 },
-  { name: '۲ ماهه - ۴۰ گیگ', data_limit: BigInt(40 * 1073741824), duration_days: 60, price: 90000 },
-  { name: '۳ ماهه - ۶۰ گیگ', data_limit: BigInt(60 * 1073741824), duration_days: 90, price: 120000 },
-];
+const GB = 1073741824;
 
 const defaultMessages: { key: string; text: string }[] = [
   // start
   { key: 'start.welcome_new', text: 'سلام {first_name}! به ربات VPN خوش آمدید.' },
   { key: 'start.welcome_back', text: 'سلام {first_name}! خوش برگشتید.' },
+  { key: 'start.invalid_link', text: '❌ لینک نامعتبر است. لطفاً از لینک صحیح استفاده کنید.' },
   // home
   { key: 'home.greeting', text: 'از منوی زیر انتخاب کنید:' },
   { key: 'buy.disabled', text: 'این بخش فعلاً در دسترس نیست!' },
   // buy
   { key: 'buy.select_plan', text: 'پلن مورد نظر خود را انتخاب کنید:' },
+  { key: 'buy.select_gb', text: 'حجم مورد نظر خود را انتخاب کنید:' },
   { key: 'buy.payment_instructions', text: 'لطفاً مبلغ زیر را واریز کنید و رسید را ارسال کنید.' },
   { key: 'buy.no_plans', text: 'در حال حاضر پلنی موجود نیست.' },
+  { key: 'buy.no_card', text: '❌ کارت بانکی برای شما تعیین نشده. لطفاً با پشتیبانی تماس بگیرید.' },
   // payment
   { key: 'payment.send_receipt', text: 'لطفاً رسید پرداخت خود را ارسال کنید.' },
   { key: 'payment.waiting', text: 'رسید شما دریافت شد. لطفاً منتظر تأیید بمانید.' },
@@ -86,20 +86,82 @@ const defaultMessages: { key: string; text: string }[] = [
   { key: 'admin.plan_added', text: '✅ پلن اضافه شد.' },
   // admin seller accounts
   { key: 'admin.accounts_settled', text: '✅ {count} اکانت تسویه شد.' },
+  // admin bank cards
+  { key: 'admin.cards_title', text: '💳 مدیریت کارت‌های بانکی' },
+  { key: 'admin.card_enter_number', text: 'شماره کارت ۱۶ رقمی را وارد کنید:' },
+  { key: 'admin.card_enter_holder', text: 'نام صاحب کارت را وارد کنید:' },
+  { key: 'admin.card_enter_bank', text: 'نام بانک را وارد کنید (اختیاری):' },
+  { key: 'admin.card_added', text: '✅ کارت بانکی با موفقیت اضافه شد.' },
+  { key: 'admin.card_deleted', text: '✅ کارت بانکی حذف شد.' },
+  { key: 'admin.card_has_users', text: '❌ این کارت به کاربرانی اختصاص دارد و قابل حذف نیست.' },
+  { key: 'admin.card_invalid_number', text: '❌ شماره کارت نامعتبر است. لطفاً ۱۶ رقم وارد کنید.' },
+  { key: 'admin.no_cards', text: 'هنوز کارت بانکی اضافه نشده.' },
+  // admin users
+  { key: 'admin.users_title', text: '👤 مدیریت کاربران' },
+  { key: 'admin.user_enter_chatid', text: 'چت آیدی تلگرام کاربر را وارد کنید:' },
+  { key: 'admin.user_select_card', text: 'کارت بانکی مورد نظر برای این کاربر را انتخاب کنید:' },
+  { key: 'admin.user_added', text: '✅ کاربر با موفقیت اضافه شد.' },
+  { key: 'admin.user_exists', text: '❌ کاربری با این چت آیدی قبلاً ثبت شده.' },
+  { key: 'admin.user_card_updated', text: '✅ کارت بانکی کاربر تغییر کرد.' },
+  { key: 'admin.no_active_cards', text: '❌ کارت بانکی فعالی وجود ندارد. ابتدا یک کارت اضافه کنید.' },
+  { key: 'admin.no_users', text: 'هنوز کاربری اضافه نشده.' },
 ];
 
 const defaultSettings: { key: string; value: string }[] = [
   { key: 'buy_enabled', value: 'false' },
 ];
 
+function generateCode(): string {
+  return crypto.randomUUID().split('-')[0];
+}
+
 async function seed() {
-  console.log('Seeding plans...');
-  for (const plan of defaultPlans) {
-    await prisma.plan.upsert({
-      where: { id: defaultPlans.indexOf(plan) + 1 },
-      update: {},
-      create: plan,
+  console.log('Seeding plan groups...');
+
+  // Only create if no per_gb group exists yet
+  let perGbGroup = await prisma.planGroup.findFirst({ where: { type: 'per_gb' } });
+  if (!perGbGroup) {
+    perGbGroup = await prisma.planGroup.create({
+      data: {
+        code: generateCode(),
+        name: 'هر گیگ ۳۰۰ تومان',
+        type: 'per_gb',
+        price_per_gb: 300000,
+        duration_days: 30,
+      },
     });
+    console.log(`  Created per-GB group: code=${perGbGroup.code}`);
+  } else {
+    console.log(`  Per-GB group already exists: code=${perGbGroup.code}`);
+  }
+
+  let fixedGroup = await prisma.planGroup.findFirst({ where: { type: 'fixed' } });
+  if (!fixedGroup) {
+    fixedGroup = await prisma.planGroup.create({
+      data: {
+        code: generateCode(),
+        name: 'بسته‌های ثابت',
+        type: 'fixed',
+        duration_days: 30,
+      },
+    });
+    console.log(`  Created fixed group: code=${fixedGroup.code}`);
+  } else {
+    console.log(`  Fixed group already exists: code=${fixedGroup.code}`);
+  }
+
+  console.log('Seeding fixed plans...');
+  const existingPlans = await prisma.plan.count({ where: { group_id: fixedGroup.id } });
+  if (existingPlans === 0) {
+    await prisma.plan.createMany({
+      data: [
+        { name: '۵ گیگ', data_limit: BigInt(5 * GB), duration_days: 30, price: 600000, group_id: fixedGroup.id },
+        { name: '۱۰ گیگ', data_limit: BigInt(10 * GB), duration_days: 30, price: 1100000, group_id: fixedGroup.id },
+      ],
+    });
+    console.log('  Created fixed plans.');
+  } else {
+    console.log('  Fixed plans already exist.');
   }
 
   console.log('Seeding bot messages...');
@@ -121,6 +183,9 @@ async function seed() {
   }
 
   console.log('Seed complete.');
+  console.log(`\nDeep links:`);
+  console.log(`  Per-GB: t.me/doveng_bot?start=${perGbGroup.code}`);
+  console.log(`  Fixed:  t.me/doveng_bot?start=${fixedGroup.code}`);
 }
 
 seed()

@@ -16,6 +16,9 @@ Main menu — the hub for all navigation. Shows role-conditional buttons for sel
 
 ── admin-only ──
 [ ⚙️ مدیریت فروشندگان ]
+[ 💳 مدیریت کارت‌ها ]
+[ 👤 مدیریت کاربران ]
+[ 📦 مدیریت پلن‌گروپ‌ها ]
 ```
 
 ## Messages
@@ -32,7 +35,10 @@ Main menu — the hub for all navigation. Shows role-conditional buttons for sel
 | خرید اکانت | `buy_account` | BUY_ACCOUNT or toast | gated by `buy_enabled` setting |
 | پشتیبانی | `support` | SUPPORT | always |
 | 🏪 پنل فروشنده | `seller_panel` | SELLER_PANEL | user is active seller |
-| ⚙️ مدیریت فروشندگان | `admin_sellers` | ADMIN_SELLERS | user is admin (`ADMIN_CHAT_ID`) |
+| ⚙️ مدیریت فروشندگان | `admin_sellers` | ADMIN_SELLERS | admin only |
+| 💳 مدیریت کارت‌ها | `admin_bank_cards` | ADMIN_BANK_CARDS | admin only |
+| 👤 مدیریت کاربران | `admin_users` | ADMIN_USERS | admin only |
+| 📦 مدیریت پلن‌گروپ‌ها | `admin_plan_groups` | ADMIN_PLAN_GROUPS | admin only |
 
 ## Transitions
 ```
@@ -42,11 +48,14 @@ HOME → BUY_ACCOUNT       (if buy_enabled = true)
 HOME → SUPPORT
 HOME → SELLER_PANEL      (seller-only)
 HOME → ADMIN_SELLERS     (admin-only)
+HOME → ADMIN_BANK_CARDS  (admin-only)
+HOME → ADMIN_USERS       (admin-only)
+HOME → ADMIN_PLAN_GROUPS (admin-only)
 ```
 
 ## Role Detection
-- **Seller:** Query `sellers` table by `chat_id` where `is_active = true`
 - **Admin:** Compare `chat_id` with `ADMIN_CHAT_ID` env var
+- **Seller:** Query `sellers` table by `chat_id` where `is_active = true`
 
 ## Buy Gate
 On "خرید اکانت" tap:
@@ -57,4 +66,4 @@ On "خرید اکانت" tap:
 ## Notes
 - This scene is the fallback for any invalid state
 - Pressing a button replaces the current message (edit, don't send new)
-- Seller/admin buttons are only rendered if the role matches — other users never see them
+- Seller/admin buttons are only rendered if the role matches

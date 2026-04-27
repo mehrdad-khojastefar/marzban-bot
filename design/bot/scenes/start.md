@@ -1,39 +1,58 @@
 # Start Scene
 
 ## Purpose
-Entry point triggered by `/start`. Registers new users, detects sellers, and redirects to Home.
+Entry point triggered by `/start`. Self-registers new users via deep link code. Detects sellers and redirects to Home.
 
 ## Flow
-1. User sends `/start`
-2. Check if user exists in DB (by `chat_id`)
-3. If new → create user record (chat_id, username, first_name, last_name)
-4. **Seller check:** look up `sellers` table by `chat_id`
-   - If seller record exists with `user_id = null` → link `user_id`, show `seller.welcome`
-5. Transition → `HOME`
+1. User sends `/start` or `/start <code>`
+2. Parse deep link payload (the part after `/start `)
+3. Check if user exists in DB (by `chat_id`)
+4. **If user exists** → update first_name/last_name/username → seller check → HOME
+5. **If user NOT found:**
+   a. If no code provided → show error "لینک نامعتبر", stop
+   b. Look up PlanGroup by `code` where `is_active = true`
+   c. If no matching group → show error "لینک نامعتبر", stop
+   d. Pick random active BankCard (nullable if none exist)
+   e. Create User with `plan_group_id`, `bank_card_id`
+   f. Seller check → HOME
+
+## Deep Link
+Telegram delivers `/start <code>` when user opens `t.me/doveng_bot?start=<code>`.
+Code format: 8 hex chars (first segment of UUIDv4), e.g. `f47ac10b`.
 
 ## UI
-No persistent UI — sends a welcome message then immediately shows the Home scene.
+- **Invalid/missing code (new user):** Error message, no menu, no buttons.
+- **Valid registration:** Welcome message, then immediately show Home scene.
+- **Returning user:** Welcome-back message, then Home scene.
 
 ## Messages
 | Key | Default (Persian) |
 |---|---|
 | `start.welcome_new` | سلام {first_name}! به ربات VPN خوش آمدید. |
 | `start.welcome_back` | سلام {first_name}! خوش برگشتید. |
+| `start.invalid_link` | ❌ لینک نامعتبر است. لطفاً از لینک صحیح استفاده کنید. |
 | `seller.welcome` | شما به عنوان فروشنده ثبت شده‌اید! از منوی اصلی به پنل فروشنده دسترسی دارید. |
 
 ## Backend
-- `db.user.findByChat(chatId)` — check existence
-- `db.user.create(userData)` — register
-- `db.seller.findByChat(chatId)` — check if seller
-- `db.seller.linkUser(sellerId, userId)` — link seller to user
+- `db.user.findUnique({ where: { chat_id } })` — check existence
+- `db.planGroup.findUnique({ where: { code, is_active: true } })` — validate deep link
+- `db.bankCard.findMany({ where: { is_active: true } })` — pick random card
+- `db.user.create({ chat_id, first_name, last_name, username, plan_group_id, bank_card_id })` — register
+- `db.user.update(id, { first_name, last_name, username })` — refresh profile (returning user)
+- `db.seller.findUnique({ where: { chat_id } })` — check if seller
+- `db.seller.update(id, { user_id })` — link seller to user
 
 ## Transitions
 ```
-START → HOME (always)
+START → error message (new user, no/invalid code — dead end)
+START → HOME (new user, valid code — registered)
+START → HOME (existing user)
 ```
 
 ## Edge Cases
-- User sends `/start` again while already registered → show `welcome_back`, go to HOME
+- User sends `/start` again while already registered → show `welcome_back`, go to HOME (code ignored)
 - Telegram user without username → store as null
 - Seller already linked (`user_id` set) → no re-linking, just show HOME with seller button
-- Seller added by admin but hasn't started → on first `/start`, link and show `seller.welcome`
+- Seller added by admin but hasn't started → on first `/start` with valid code, register + link + show `seller.welcome`
+- No active bank cards at registration → create user with `bank_card_id = null`
+- Deep link code for inactive group → same as invalid code
