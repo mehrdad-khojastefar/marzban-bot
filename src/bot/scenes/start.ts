@@ -15,15 +15,40 @@ startScene.enter(async (ctx) => {
   // Admin always gets through
   const isAdmin = String(chatId) === env.ADMIN_CHAT_ID;
   if (isAdmin) {
-    // Ensure admin has a seller record (admin-as-seller)
+    // Ensure admin has a User record
+    let adminUser = await db.user.findUnique({ where: { chat_id: chatId } });
+    if (!adminUser) {
+      adminUser = await db.user.create({
+        data: {
+          chat_id: chatId,
+          first_name: ctx.from!.first_name ?? 'Admin',
+          last_name: ctx.from!.last_name ?? undefined,
+          username: ctx.from!.username ?? undefined,
+          status: 'approved',
+        },
+      });
+    } else if (adminUser.status !== 'approved') {
+      adminUser = await db.user.update({
+        where: { id: adminUser.id },
+        data: { status: 'approved' },
+      });
+    }
+
+    // Ensure admin has a Seller record linked to User
     let seller = await db.seller.findUnique({ where: { chat_id: chatId } });
     if (!seller) {
       seller = await db.seller.create({
-        data: { chat_id: chatId, is_active: true },
+        data: { chat_id: chatId, user_id: adminUser.id, is_active: true },
       });
       console.log(`Admin seller record created: id=${seller.id}`);
+    } else if (!seller.user_id) {
+      await db.seller.update({
+        where: { id: seller.id },
+        data: { user_id: adminUser.id },
+      });
     }
 
+    ctx.session.userId = adminUser.id;
     const sent = await ctx.reply('⏳', Markup.keyboard([['🏠 منو اصلی']]).resize());
     ctx.session.lastBotMessageId = sent.message_id;
     await ctx.scene.enter(SCENE_HOME);

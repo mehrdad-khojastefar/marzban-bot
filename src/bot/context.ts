@@ -36,9 +36,10 @@ export interface SessionData extends Scenes.SceneSessionData {
   managingCardId?: number;
 
   // admin user management
-  adminUserStep?: 'chat_id' | 'select_card';
+  adminUserStep?: 'chat_id' | 'select_cards';
   pendingUserChatId?: string;
   managingUserId?: number;
+  selectedCardIds?: number[];
 
   // admin plan group management
   adminPlanStep?: 'gb' | 'price';
