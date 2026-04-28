@@ -2,6 +2,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
 import { getMessage } from '../services/messageService';
+import { loadEnv } from '../../core/utils/config';
 
 export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): void {
   const adminChatId = process.env.ADMIN_CHAT_ID;
@@ -137,10 +138,19 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
       },
     });
 
-    // Notify user
+    // Notify user with channel invite link
     try {
       const approvedMsg = await getMessage('user.approved');
-      await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg);
+      const env = loadEnv();
+      if (env.CHANNEL_INVITE_LINK) {
+        await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg, {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.url('📢 عضویت در کانال', env.CHANNEL_INVITE_LINK)],
+          ]).reply_markup,
+        });
+      } else {
+        await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg);
+      }
     } catch (err) {
       console.error(`Failed to notify user ${user.chat_id} of approval:`, err);
     }
