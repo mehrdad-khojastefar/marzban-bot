@@ -11,6 +11,21 @@ export const adminUsersScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_USER
 
 const PAGE_SIZE = 8;
 
+const STATUS_ICON: Record<string, string> = {
+  pending: '⏳',
+  approved: '✅',
+  banned: '🚫',
+};
+
+function resetSessionState(ctx: BotContext) {
+  ctx.session.adminUserStep = undefined;
+  ctx.session.pendingUserChatId = undefined;
+  ctx.session.managingUserId = undefined;
+  ctx.session.selectedCardIds = undefined;
+}
+
+// ── User List ──────────────────────────────────────────────────────
+
 async function renderUserList(ctx: BotContext, page = 0) {
   const env = loadEnv();
   if (String(ctx.from!.id) !== env.ADMIN_CHAT_ID) {
@@ -19,16 +34,12 @@ async function renderUserList(ctx: BotContext, page = 0) {
   }
 
   const db = getDb();
-
-  // Reset user creation state
-  ctx.session.adminUserStep = undefined;
-  ctx.session.pendingUserChatId = undefined;
-  ctx.session.managingUserId = undefined;
+  resetSessionState(ctx);
   ctx.session.currentPage = page;
 
   const totalUsers = await db.user.count();
   const users = await db.user.findMany({
-    include: { bank_card: true },
+    include: { bank_cards: true },
     orderBy: { created_at: 'desc' },
     skip: page * PAGE_SIZE,
     take: PAGE_SIZE,
@@ -49,10 +60,10 @@ async function renderUserList(ctx: BotContext, page = 0) {
 
   for (const user of users) {
     const name = user.first_name || String(user.chat_id);
-    const cardInfo = user.bank_card
-      ? ` - 💳 ****${user.bank_card.card_number.slice(-4)}`
-      : '';
-    buttons.push([Markup.button.callback(`${name}${cardInfo}`, `user_${user.id}`)]);
+    const icon = STATUS_ICON[user.status] ?? '';
+    const cardCount = user.bank_cards.length;
+    const cardInfo = cardCount > 0 ? ` - 💳 ${String(cardCount)}` : '';
+    buttons.push([Markup.button.callback(`${icon} ${name}${cardInfo}`, `user_${user.id}`)]);
   }
 
   // Pagination
@@ -73,6 +84,107 @@ async function renderUserList(ctx: BotContext, page = 0) {
   await sendOrEdit(ctx, title, Markup.inlineKeyboard(buttons));
 }
 
+// ── User Detail ────────────────────────────────────────────────────
+
+async function renderUserDetail(ctx: BotContext, userId: number) {
+  const db = getDb();
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { bank_cards: true },
+  });
+
+  if (!user) {
+    await renderUserList(ctx);
+    return;
+  }
+
+  ctx.session.managingUserId = userId;
+
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+  const username = user.username ? ` (@${user.username})` : '';
+  const statusLabel = STATUS_ICON[user.status] ?? '';
+
+  const cardLines =
+    user.bank_cards.length > 0
+      ? user.bank_cards
+          .map((c) => `💳 ${c.holder_name} - ****${c.card_number.slice(-4)}`)
+          .join('\n')
+      : '💳 بدون کارت';
+
+  const detail = [
+    `👤 ${name}${username}`,
+    `🆔 چت آیدی: ${user.chat_id}`,
+    `وضعیت: ${statusLabel} ${user.status}`,
+    cardLines,
+  ].join('\n');
+
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
+
+  if (user.status === 'pending') {
+    buttons.push([
+      Markup.button.callback('✅ تأیید', `approve_user_${user.id}`),
+      Markup.button.callback('❌ رد', `reject_user_${user.id}`),
+    ]);
+  } else if (user.status === 'approved') {
+    buttons.push([Markup.button.callback('💳 تغییر کارت‌ها', `edit_cards_${user.id}`)]);
+    buttons.push([Markup.button.callback('🚫 بن کردن', `ban_user_${user.id}`)]);
+  } else if (user.status === 'banned') {
+    buttons.push([Markup.button.callback('✅ رفع بن', `unban_user_${user.id}`)]);
+  }
+
+  buttons.push([Markup.button.callback('🔙 بازگشت', 'back_list')]);
+  await sendOrEdit(ctx, detail, Markup.inlineKeyboard(buttons));
+}
+
+// ── Multi-Card Selection ───────────────────────────────────────────
+
+async function renderCardSelection(ctx: BotContext, userId: number, headerExtra?: string) {
+  const db = getDb();
+  const cards = await db.bankCard.findMany({
+    where: { is_active: true },
+    orderBy: { created_at: 'desc' },
+  });
+
+  if (cards.length === 0) {
+    const msg = await getMessage('admin.no_active_cards');
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
+    );
+    return;
+  }
+
+  const selected = ctx.session.selectedCardIds ?? [];
+  const selectedCount = selected.length;
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  const header =
+    (headerExtra ?? `💳 کارت‌های بانکی را برای ${user?.first_name ?? '?'} انتخاب کنید:`) +
+    `\n\nانتخاب شده: ${selectedCount > 0 ? String(selectedCount) + ' کارت' : 'هیچکدام'}`;
+
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
+
+  for (const card of cards) {
+    const last4 = card.card_number.slice(-4);
+    const isSelected = selected.includes(card.id);
+    const icon = isSelected ? '✅' : '💳';
+    buttons.push([
+      Markup.button.callback(
+        `${icon} ${card.holder_name} - ****${last4}`,
+        `toggle_ucard_${card.id}`,
+      ),
+    ]);
+  }
+
+  buttons.push([Markup.button.callback('✅ تأیید انتخاب', 'confirm_cards')]);
+  buttons.push([Markup.button.callback('🔙 انصراف', 'cancel_cards')]);
+
+  await sendOrEdit(ctx, header, Markup.inlineKeyboard(buttons));
+}
+
+// ── Scene Handlers ─────────────────────────────────────────────────
+
 adminUsersScene.enter(async (ctx) => {
   await renderUserList(ctx);
 });
@@ -86,6 +198,209 @@ adminUsersScene.action(/^page_(\d+)$/, async (ctx) => {
   const page = parseInt(ctx.match[1]);
   await renderUserList(ctx, page);
 });
+
+// ── User Detail ────────────────────────────────────────────────────
+
+adminUsersScene.action(/^user_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = parseInt(ctx.match[1]);
+  await renderUserDetail(ctx, userId);
+});
+
+// ── Approve pending user (enter card selection) ────────────────────
+
+adminUsersScene.action(/^approve_user_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = parseInt(ctx.match[1]);
+  ctx.session.managingUserId = userId;
+  ctx.session.adminUserStep = 'select_cards';
+  ctx.session.selectedCardIds = [];
+  await renderCardSelection(ctx, userId);
+});
+
+// ── Reject pending user → ban ──────────────────────────────────────
+
+adminUsersScene.action(/^reject_user_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = parseInt(ctx.match[1]);
+  const db = getDb();
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user || user.status === 'banned') {
+    await ctx.answerCbQuery('⚠️ این کاربر قبلاً بررسی شده است.', { show_alert: true });
+    await renderUserList(ctx);
+    return;
+  }
+
+  await db.user.update({
+    where: { id: userId },
+    data: { status: 'banned' },
+  });
+
+  await sendOrEdit(
+    ctx,
+    `❌ کاربر ${user.first_name} (@${user.username ?? '—'}) رد شد و بن شد.`,
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
+  );
+});
+
+// ── Ban approved user ──────────────────────────────────────────────
+
+adminUsersScene.action(/^ban_user_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = parseInt(ctx.match[1]);
+  const db = getDb();
+
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    await renderUserList(ctx);
+    return;
+  }
+
+  await db.user.update({
+    where: { id: userId },
+    data: { status: 'banned' },
+  });
+
+  await sendOrEdit(
+    ctx,
+    `🚫 کاربر ${user.first_name} (@${user.username ?? '—'}) بن شد.`,
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
+  );
+});
+
+// ── Unban banned user → enter card selection to approve ────────────
+
+adminUsersScene.action(/^unban_user_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = parseInt(ctx.match[1]);
+  const db = getDb();
+
+  const user = await db.user.findUnique({ where: { id: userId }, include: { bank_cards: true } });
+  if (!user) {
+    await renderUserList(ctx);
+    return;
+  }
+
+  // Pre-select their existing cards
+  ctx.session.managingUserId = userId;
+  ctx.session.adminUserStep = 'select_cards';
+  ctx.session.selectedCardIds = user.bank_cards.map((c) => c.id);
+  await renderCardSelection(ctx, userId);
+});
+
+// ── Edit cards for approved user ───────────────────────────────────
+
+adminUsersScene.action(/^edit_cards_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = parseInt(ctx.match[1]);
+  const db = getDb();
+
+  const user = await db.user.findUnique({ where: { id: userId }, include: { bank_cards: true } });
+  if (!user) {
+    await renderUserList(ctx);
+    return;
+  }
+
+  // Pre-select current cards
+  ctx.session.managingUserId = userId;
+  ctx.session.adminUserStep = 'select_cards';
+  ctx.session.selectedCardIds = user.bank_cards.map((c) => c.id);
+  await renderCardSelection(ctx, userId);
+});
+
+// ── Toggle card in multi-select ────────────────────────────────────
+
+adminUsersScene.action(/^toggle_ucard_(\d+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const cardId = parseInt(ctx.match[1]);
+  const selected = ctx.session.selectedCardIds ?? [];
+
+  if (selected.includes(cardId)) {
+    ctx.session.selectedCardIds = selected.filter((id) => id !== cardId);
+  } else {
+    ctx.session.selectedCardIds = [...selected, cardId];
+  }
+
+  const userId = ctx.session.managingUserId;
+  if (!userId) {
+    await renderUserList(ctx);
+    return;
+  }
+  await renderCardSelection(ctx, userId);
+});
+
+// ── Confirm card selection ─────────────────────────────────────────
+
+adminUsersScene.action('confirm_cards', async (ctx) => {
+  const selected = ctx.session.selectedCardIds ?? [];
+
+  if (selected.length === 0) {
+    await ctx.answerCbQuery('❌ حداقل یک کارت باید انتخاب شود.', { show_alert: true });
+    return;
+  }
+  await ctx.answerCbQuery('⏳ در حال ذخیره...');
+
+  const userId = ctx.session.managingUserId;
+  if (!userId) {
+    await renderUserList(ctx);
+    return;
+  }
+
+  const db = getDb();
+  const user = await db.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    await renderUserList(ctx);
+    return;
+  }
+
+  const wasPending = user.status === 'pending' || user.status === 'banned';
+
+  // Set cards (replace all) and approve if needed
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      status: 'approved',
+      bank_cards: {
+        set: selected.map((id) => ({ id })),
+      },
+    },
+  });
+
+  // Notify user if they were just approved
+  if (wasPending) {
+    try {
+      const approvedMsg = await getMessage('user.approved');
+      await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg);
+    } catch (err) {
+      console.error(`Failed to notify user ${user.chat_id} of approval:`, err);
+    }
+  }
+
+  const action = wasPending ? 'تأیید شد' : 'کارت‌ها بروزرسانی شد';
+  await sendOrEdit(
+    ctx,
+    `✅ کاربر ${user.first_name} (@${user.username ?? '—'}) ${action}.\n💳 ${String(selected.length)} کارت اختصاص داده شد.`,
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
+  );
+
+  resetSessionState(ctx);
+});
+
+// ── Cancel card selection ──────────────────────────────────────────
+
+adminUsersScene.action('cancel_cards', async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.session.managingUserId;
+  resetSessionState(ctx);
+  if (userId) {
+    await renderUserDetail(ctx, userId);
+  } else {
+    await renderUserList(ctx);
+  }
+});
+
+// ── Add User Flow ──────────────────────────────────────────────────
 
 adminUsersScene.action('add_user', async (ctx) => {
   await ctx.answerCbQuery();
@@ -126,133 +441,25 @@ adminUsersScene.on('text', async (ctx) => {
       return;
     }
 
-    ctx.session.pendingUserChatId = input;
-    ctx.session.adminUserStep = 'select_card';
-    await showCardSelection(ctx);
-    return;
-  }
-});
-
-async function showCardSelection(ctx: BotContext, message?: string) {
-  const db = getDb();
-  const cards = await db.bankCard.findMany({
-    where: { is_active: true },
-    orderBy: { created_at: 'desc' },
-  });
-
-  if (cards.length === 0) {
-    const msg = await getMessage('admin.no_active_cards');
-    await sendOrEdit(
-      ctx,
-      msg,
-      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
-    );
-    return;
-  }
-
-  const msg = message || (await getMessage('admin.user_select_card'));
-  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
-
-  for (const card of cards) {
-    const last4 = card.card_number.slice(-4);
-    buttons.push([
-      Markup.button.callback(
-        `💳 ${card.holder_name} - ****${last4}`,
-        `select_card_${card.id}`,
-      ),
-    ]);
-  }
-
-  buttons.push([Markup.button.callback('🔙 بازگشت', 'back_list')]);
-  await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
-}
-
-adminUsersScene.action(/^select_card_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const cardId = parseInt(ctx.match[1]);
-  const db = getDb();
-
-  // If we're changing a card for an existing user
-  if (ctx.session.managingUserId) {
-    await db.user.update({
-      where: { id: ctx.session.managingUserId },
-      data: { bank_card_id: cardId },
-    });
-    ctx.session.managingUserId = undefined;
-    const msg = await getMessage('admin.user_card_updated');
-    await sendOrEdit(
-      ctx,
-      msg,
-      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
-    );
-    return;
-  }
-
-  // Creating a new user
-  if (ctx.session.pendingUserChatId) {
-    await db.user.create({
+    // Create user as pending, then enter card selection to approve
+    const user = await db.user.create({
       data: {
-        chat_id: BigInt(ctx.session.pendingUserChatId),
-        first_name: ctx.session.pendingUserChatId,
-        bank_card_id: cardId,
+        chat_id: BigInt(input),
+        first_name: input,
+        status: 'pending',
       },
     });
 
     ctx.session.pendingUserChatId = undefined;
-    ctx.session.adminUserStep = undefined;
-
-    const msg = await getMessage('admin.user_added');
-    await sendOrEdit(
-      ctx,
-      msg,
-      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
-    );
+    ctx.session.managingUserId = user.id;
+    ctx.session.adminUserStep = 'select_cards';
+    ctx.session.selectedCardIds = [];
+    await renderCardSelection(ctx, user.id);
     return;
   }
 });
 
-adminUsersScene.action(/^user_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const userId = parseInt(ctx.match[1]);
-  const db = getDb();
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    include: { bank_card: true },
-  });
-
-  if (!user) {
-    await renderUserList(ctx);
-    return;
-  }
-
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
-  const username = user.username ? ` (@${user.username})` : '';
-  const cardInfo = user.bank_card
-    ? `💳 ${user.bank_card.holder_name} - ****${user.bank_card.card_number.slice(-4)}`
-    : '💳 بدون کارت';
-
-  const detail = [
-    `👤 ${name}${username}`,
-    `🆔 چت آیدی: ${user.chat_id}`,
-    cardInfo,
-  ].join('\n');
-
-  await sendOrEdit(
-    ctx,
-    detail,
-    Markup.inlineKeyboard([
-      [Markup.button.callback('💳 تغییر کارت', `change_card_${user.id}`)],
-      [Markup.button.callback('🔙 بازگشت', 'back_list')],
-    ]),
-  );
-});
-
-adminUsersScene.action(/^change_card_(\d+)$/, async (ctx) => {
-  await ctx.answerCbQuery();
-  const userId = parseInt(ctx.match[1]);
-  ctx.session.managingUserId = userId;
-  await showCardSelection(ctx);
-});
+// ── Navigation ─────────────────────────────────────────────────────
 
 adminUsersScene.action('back_list', async (ctx) => {
   await ctx.answerCbQuery();

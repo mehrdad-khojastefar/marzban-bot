@@ -7,6 +7,7 @@ export const envSchema = z.object({
   MARZBAN_USERNAME: z.string(),
   MARZBAN_PASSWORD: z.string(),
   ADMIN_CHAT_ID: z.string(),
+  CHANNEL_ID: z.string().optional(),
   CARD_NUMBER: z.string(),
   SUPPORT_USERNAME: z.string(),
   SUB_BASE_URL: z.string().url(),

@@ -17,9 +17,14 @@ async function getPaymentMethod(): Promise<PaymentMethod> {
   return method === 'premzy' ? 'premzy' : 'manual';
 }
 
-async function pickRandomCard(): Promise<BankCard | null> {
+/** Pick a random card from the user's assigned cards (active only). */
+async function pickRandomCardForUser(userId: number): Promise<BankCard | null> {
   const db = getDb();
-  const cards = await db.bankCard.findMany({ where: { is_active: true } });
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { bank_cards: { where: { is_active: true } } },
+  });
+  const cards = user?.bank_cards ?? [];
   if (cards.length === 0) return null;
   return cards[Math.floor(Math.random() * cards.length)];
 }
@@ -230,7 +235,7 @@ async function handleManualPayment(
   db: PrismaClient,
   params: PaymentParams,
 ): Promise<void> {
-  const card = await pickRandomCard();
+  const card = await pickRandomCardForUser(params.userId);
   if (!card) {
     const noCardMsg = await getMessage('buy.no_card');
     await sendOrEdit(

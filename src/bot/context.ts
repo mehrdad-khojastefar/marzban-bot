@@ -23,10 +23,11 @@ export interface SessionData extends Scenes.SceneSessionData {
   // admin account management
   adminEditField?: 'data_limit' | 'expire' | 'price' | 'note';
   adminAccountsFrom?: 'seller' | 'global';
-  adminCreateStep?: 'chat_id' | 'data_limit' | 'duration' | 'price';
+  adminCreateStep?: 'chat_id' | 'select_plan' | 'custom_gb' | 'custom_price' | 'data_limit' | 'duration' | 'price';
   adminCreateChatId?: number;
   adminCreateDataLimit?: number;
   adminCreateDuration?: number;
+  adminCreateSellerPlanId?: number;
 
   // admin bank card management
   adminCardStep?: 'number' | 'holder' | 'bank';
@@ -35,9 +36,10 @@ export interface SessionData extends Scenes.SceneSessionData {
   managingCardId?: number;
 
   // admin user management
-  adminUserStep?: 'chat_id' | 'select_card';
+  adminUserStep?: 'chat_id' | 'select_cards';
   pendingUserChatId?: string;
   managingUserId?: number;
+  selectedCardIds?: number[];
 
   // admin plan group management
   adminPlanStep?: 'gb' | 'price';

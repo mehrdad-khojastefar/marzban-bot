@@ -29,6 +29,12 @@ enum SellerPlanType {
   per_unit
 }
 
+enum UserStatus {
+  pending
+  approved
+  banned
+}
+
 enum PlanGroupType {
   per_gb
   fixed
@@ -69,15 +75,16 @@ model PlanGroup {
 }
 
 model BankCard {
-  id          Int       @id @default(autoincrement())
-  card_number String
-  holder_name String
-  bank_name   String?
-  is_active   Boolean   @default(true)
-  created_at  DateTime  @default(now())
+  id           Int           @id @default(autoincrement())
+  card_number  String
+  holder_name  String
+  bank_name    String?
+  is_active    Boolean       @default(true)
+  created_at   DateTime      @default(now())
   users        User[]
   payments     Payment[]
   transactions Transaction[]
+  assigned_users User[]      @relation("UserBankCards")
 
   @@map("bank_cards")
 }
@@ -88,6 +95,7 @@ model User {
   username      String?
   first_name    String
   last_name     String?
+  status        UserStatus @default(pending)
   has_test      Boolean    @default(false)
   bank_card_id  Int?
   plan_group_id Int?
@@ -98,6 +106,7 @@ model User {
   seller        Seller?
   bank_card     BankCard?  @relation(fields: [bank_card_id], references: [id])
   plan_group    PlanGroup? @relation(fields: [plan_group_id], references: [id])
+  bank_cards    BankCard[] @relation("UserBankCards")
 
   @@map("users")
 }
