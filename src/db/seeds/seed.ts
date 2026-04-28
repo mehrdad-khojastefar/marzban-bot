@@ -13,6 +13,8 @@ const defaultMessages: { key: string; text: string }[] = [
   { key: 'start.welcome_new', text: 'سلام {first_name}! به ربات VPN خوش آمدید.' },
   { key: 'start.welcome_back', text: 'سلام {first_name}! خوش برگشتید.' },
   { key: 'start.invalid_link', text: '❌ لینک نامعتبر است. لطفاً از لینک صحیح استفاده کنید.' },
+  { key: 'user.approved', text: '✅ درخواست شما تأیید شد! از منوی اصلی استفاده کنید.' },
+  { key: 'user.join_channel', text: '⚠️ برای استفاده از ربات، ابتدا در کانال ما عضو شوید.' },
   // home
   { key: 'home.greeting', text: 'از منوی زیر انتخاب کنید:' },
   { key: 'buy.disabled', text: 'این بخش فعلاً در دسترس نیست!' },
@@ -110,6 +112,7 @@ const defaultMessages: { key: string; text: string }[] = [
 const defaultSettings: { key: string; value: string }[] = [
   { key: 'buy_enabled', value: 'false' },
   { key: 'payment_method', value: 'manual' }, // 'manual' or 'premzy'
+  { key: 'test_enabled', value: 'false' },
 ];
 
 function generateCode(): string {

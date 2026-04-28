@@ -173,8 +173,94 @@ adminAccountsScene.action('create_account', async (ctx) => {
   );
 });
 
-adminAccountsScene.action('confirm_create', async (ctx) => {
+// After chat_id is entered, show plan selection
+async function showPlanSelection(ctx: BotContext) {
+  const db = getDb();
+
+  // Get all active seller plans and deduplicate by (price, data_limit, type)
+  const allPlans = await db.sellerPlan.findMany({
+    where: { is_active: true },
+    orderBy: { price: 'asc' },
+  });
+
+  const seen = new Set<string>();
+  const uniquePlans = allPlans.filter((p) => {
+    const key = `${p.price}_${p.data_limit}_${p.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [
+    [Markup.button.callback('✏️ پلن سفارشی (یکبار مصرف)', 'custom_plan')],
+  ];
+
+  for (const plan of uniquePlans) {
+    const label = `${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${formatPrice(plan.price)}`;
+    buttons.push([Markup.button.callback(label, `pick_plan_${plan.id}`)]);
+  }
+
+  buttons.push([Markup.button.callback('🔙 انصراف', 'cancel_create')]);
+
+  await sendOrEdit(
+    ctx,
+    `👤 چت آیدی: ${ctx.session.adminCreateChatId}\n\nپلن را انتخاب کنید یا یک پلن سفارشی بسازید:`,
+    Markup.inlineKeyboard(buttons),
+  );
+}
+
+// Pick an existing seller plan
+adminAccountsScene.action(/^pick_plan_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
+  const planId = parseInt(ctx.match[1]);
+  const db = getDb();
+  const plan = await db.sellerPlan.findUnique({ where: { id: planId } });
+  if (!plan) {
+    await showPlanSelection(ctx);
+    return;
+  }
+
+  ctx.session.adminCreateSellerPlanId = plan.id;
+  ctx.session.adminCreateDataLimit = Number(plan.data_limit);
+  ctx.session.adminCreateDuration = 30; // default 30 days
+  ctx.session.pendingPrice = plan.price;
+
+  const chatId = ctx.session.adminCreateChatId!;
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  await sendOrEdit(
+    ctx,
+    `⚠️ تأیید ساخت اکانت\n\n` +
+      `👤 چت آیدی: ${chatId}\n` +
+      `📋 پلن: ${plan.name}\n` +
+      `📊 حجم: ${formatBytes(Number(plan.data_limit))}\n` +
+      `⏰ مدت: ۳۰ روز\n` +
+      `💰 قیمت: ${formatPrice(plan.price)}\n` +
+      `📅 انقضا: ${formatJalaliDate(expiresAt)}\n\n` +
+      `آیا مطمئن هستید؟`,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✅ تأیید و ساخت', 'confirm_create'),
+        Markup.button.callback('❌ انصراف', 'cancel_create'),
+      ],
+    ]),
+  );
+});
+
+// Custom plan flow
+adminAccountsScene.action('custom_plan', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.adminCreateStep = 'custom_gb';
+  ctx.session.adminCreateSellerPlanId = undefined;
+  await sendOrEdit(
+    ctx,
+    'حجم را به گیگابایت وارد کنید:',
+    Markup.inlineKeyboard([[Markup.button.callback('🔙 انصراف', 'cancel_create')]]),
+  );
+});
+
+adminAccountsScene.action('confirm_create', async (ctx) => {
+  await ctx.answerCbQuery('⏳ در حال ساخت اکانت...');
 
   const chatId = ctx.session.adminCreateChatId;
   const dataLimit = ctx.session.adminCreateDataLimit;
@@ -187,6 +273,7 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
   }
 
   const db = getDb();
+  const env = loadEnv();
 
   // Find or create user
   let user = await db.user.findUnique({ where: { chat_id: BigInt(chatId) } });
@@ -195,9 +282,15 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
       data: {
         chat_id: BigInt(chatId),
         first_name: String(chatId),
+        status: 'approved',
       },
     });
   }
+
+  // Get admin's seller ID
+  const adminSeller = await db.seller.findUnique({
+    where: { chat_id: BigInt(env.ADMIN_CHAT_ID) },
+  });
 
   try {
     const marzban = getMarzban();
@@ -219,6 +312,8 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
     const account = await db.account.create({
       data: {
         user_id: user.id,
+        seller_id: adminSeller?.id ?? null,
+        seller_plan_id: ctx.session.adminCreateSellerPlanId ?? null,
         marzban_username: marzbanUsername,
         marzban_sub_token: extractSubToken(marzbanUser.subscription_url),
         type: 'paid',
@@ -228,8 +323,7 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
       },
     });
 
-    const env = loadEnv();
-    const subUrl = buildSubUrl(env.SUB_BASE_URL, marzbanUser.subscription_url);
+    const subUrl = buildSubUrl(env.SUB_BASE_URL, `/sub/${extractSubToken(marzbanUser.subscription_url)}`);
 
     let linksText = `\n\n🔗 لینک اشتراک:\n<pre>${subUrl}</pre>`;
     const configs = await fetchConfigs(subUrl);
@@ -284,7 +378,7 @@ adminAccountsScene.on('text', async (ctx) => {
     [Markup.button.callback('🔙 انصراف', 'cancel_create')],
   ]);
 
-  // Create flow: chat_id step
+  // Create flow: chat_id step → then show plan selection
   if (ctx.session.adminCreateStep === 'chat_id') {
     const chatId = parseInt(input);
     if (isNaN(chatId) || chatId <= 0) {
@@ -292,49 +386,38 @@ adminAccountsScene.on('text', async (ctx) => {
       return;
     }
     ctx.session.adminCreateChatId = chatId;
-    ctx.session.adminCreateStep = 'data_limit';
-    await sendOrEdit(ctx, 'حجم را به گیگابایت وارد کنید:', backButton);
+    ctx.session.adminCreateStep = 'select_plan';
+    await showPlanSelection(ctx);
     return;
   }
 
-  // Create flow: data_limit step
-  if (ctx.session.adminCreateStep === 'data_limit') {
+  // Custom plan: GB step
+  if (ctx.session.adminCreateStep === 'custom_gb') {
     const gb = parseFloat(input);
     if (isNaN(gb) || gb <= 0) {
       await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
       return;
     }
     ctx.session.adminCreateDataLimit = Math.round(gb * 1073741824);
-    ctx.session.adminCreateStep = 'duration';
-    await sendOrEdit(ctx, 'مدت اعتبار را به روز وارد کنید:', backButton);
-    return;
-  }
-
-  // Create flow: duration step
-  if (ctx.session.adminCreateStep === 'duration') {
-    const days = parseInt(input);
-    if (isNaN(days) || days <= 0) {
-      await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
-      return;
-    }
-    ctx.session.adminCreateDuration = days;
-    ctx.session.adminCreateStep = 'price';
+    ctx.session.adminCreateStep = 'custom_price';
     await sendOrEdit(ctx, 'قیمت را به تومان وارد کنید (۰ برای رایگان):', backButton);
     return;
   }
 
-  // Create flow: price step → show confirmation
-  if (ctx.session.adminCreateStep === 'price') {
+  // Custom plan: price step → show confirmation
+  if (ctx.session.adminCreateStep === 'custom_price') {
     const price = parseInt(input);
     if (isNaN(price) || price < 0) {
       await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
       return;
     }
     ctx.session.pendingPrice = price;
+    ctx.session.adminCreateDuration = 30; // default 30 days
+    ctx.session.adminCreateSellerPlanId = undefined;
 
     const chatId = ctx.session.adminCreateChatId!;
     const dataLimit = ctx.session.adminCreateDataLimit!;
-    const duration = ctx.session.adminCreateDuration!;
+    const duration = 30;
     const expiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
 
     await sendOrEdit(

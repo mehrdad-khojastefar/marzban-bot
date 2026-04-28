@@ -123,7 +123,7 @@ async function provisionAccount(ctx: BotContext) {
 
     await sendOrEdit(
       ctx,
-      `${successMsg}\nقیمت: ${formatPrice(price)}${configText}`,
+      `${successMsg}${configText}`,
       Markup.inlineKeyboard([
         [Markup.button.callback('🏷 نام‌گذاری این اکانت', 'name_account')],
         [Markup.button.callback('🔙 بازگشت به پنل', 'skip_note')],

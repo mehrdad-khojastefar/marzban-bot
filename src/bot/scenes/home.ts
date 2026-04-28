@@ -66,15 +66,21 @@ homeScene.enter(async (ctx) => {
     return;
   }
 
-  // Regular users see all buttons
+  // Regular users — build buttons conditionally
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [
     [Markup.button.callback('مدیریت اکانت‌ها', 'manage_accounts')],
-    [
-      Markup.button.callback('اکانت تستی', 'test_account'),
-      Markup.button.callback('خرید اکانت', 'buy_account'),
-    ],
-    [Markup.button.callback('پشتیبانی', 'support')],
   ];
+
+  // Test account: only show if test_enabled
+  const testEnabled = await getSetting('test_enabled');
+  const row2: ReturnType<typeof Markup.button.callback>[] = [];
+  if (testEnabled === 'true') {
+    row2.push(Markup.button.callback('اکانت تستی', 'test_account'));
+  }
+  row2.push(Markup.button.callback('خرید اکانت', 'buy_account'));
+  buttons.push(row2);
+
+  buttons.push([Markup.button.callback('پشتیبانی', 'support')]);
 
   await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
@@ -89,6 +95,11 @@ homeScene.action('manage_accounts', async (ctx) => {
 });
 
 homeScene.action('test_account', async (ctx) => {
+  const testEnabled = await getSetting('test_enabled');
+  if (testEnabled !== 'true') {
+    await ctx.answerCbQuery('این بخش فعلاً غیرفعال است.', { show_alert: true });
+    return;
+  }
   await ctx.answerCbQuery();
   await ctx.scene.enter(SCENE_TEST_ACCOUNT);
 });
