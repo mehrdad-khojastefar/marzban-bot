@@ -367,11 +367,20 @@ adminUsersScene.action('confirm_cards', async (ctx) => {
     },
   });
 
-  // Notify user if they were just approved
+  // Notify user if they were just approved, with channel invite link
   if (wasPending) {
     try {
       const approvedMsg = await getMessage('user.approved');
-      await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg);
+      const env = loadEnv();
+      if (env.CHANNEL_INVITE_LINK) {
+        await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg, {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.url('📢 عضویت در کانال', env.CHANNEL_INVITE_LINK)],
+          ]).reply_markup,
+        });
+      } else {
+        await ctx.telegram.sendMessage(user.chat_id.toString(), approvedMsg);
+      }
     } catch (err) {
       console.error(`Failed to notify user ${user.chat_id} of approval:`, err);
     }

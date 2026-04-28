@@ -78,24 +78,7 @@ startScene.enter(async (ctx) => {
       },
     });
 
-    // Channel membership check
-    if (env.CHANNEL_ID) {
-      try {
-        const member = await ctx.telegram.getChatMember(env.CHANNEL_ID, ctx.from!.id);
-        if (['left', 'kicked'].includes(member.status)) {
-          await ctx.reply(
-            '⚠️ برای استفاده از ربات، ابتدا در کانال ما عضو شوید.',
-            Markup.inlineKeyboard([
-              [Markup.button.url('📢 عضویت در کانال', `https://t.me/${env.CHANNEL_ID.replace('@', '')}`)],
-            ]),
-          );
-          return;
-        }
-      } catch (err) {
-        console.error('Channel membership check failed:', err);
-        // Don't block on failure — let user through
-      }
-    }
+    // Channel membership is now checked globally via channelCheck middleware
 
     ctx.session.userId = user.id;
 
