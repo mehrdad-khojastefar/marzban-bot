@@ -10,6 +10,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   pendingTransactionId?: number;
   selectedAccountId?: number;
   awaitingRename?: boolean;
+  renewAccountId?: number;
 
   // seller flows
   sellerId?: number;

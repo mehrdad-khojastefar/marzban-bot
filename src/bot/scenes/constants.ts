@@ -6,6 +6,7 @@ export const SCENE_MANAGE_ACCOUNTS = 'scene:manage_accounts';
 export const SCENE_VIEW_ACCOUNT = 'scene:view_account';
 export const SCENE_TEST_ACCOUNT = 'scene:test_account';
 export const SCENE_SUPPORT = 'scene:support';
+export const SCENE_RENEW_ACCOUNT = 'scene:renew_account';
 export const SCENE_ERROR = 'scene:error';
 
 // seller scenes

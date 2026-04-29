@@ -59,6 +59,11 @@ enum PaymentMethod {
   manual
 }
 
+enum TransactionType {
+  buy
+  renew
+}
+
 model PlanGroup {
   id            Int           @id @default(autoincrement())
   code          String        @unique @db.VarChar(8)
@@ -179,6 +184,7 @@ model Transaction {
   data_limit        BigInt?
   duration_days     Int
   amount            Int
+  type              TransactionType   @default(buy)
   status            TransactionStatus @default(pending)
   method            PaymentMethod
   premzy_order_id   String?           @unique

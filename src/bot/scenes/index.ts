@@ -8,6 +8,7 @@ import { manageAccountsScene } from './manageAccounts';
 import { viewAccountScene } from './viewAccount';
 import { testAccountScene } from './testAccount';
 import { supportScene } from './support';
+import { renewAccountScene } from './renewAccount';
 import { errorScene } from './error';
 import { sellerPanelScene } from './sellerPanel';
 import { sellerCreateAccountScene } from './sellerCreateAccount';
@@ -33,6 +34,7 @@ export {
   SCENE_VIEW_ACCOUNT,
   SCENE_TEST_ACCOUNT,
   SCENE_SUPPORT,
+  SCENE_RENEW_ACCOUNT,
   SCENE_ERROR,
   SCENE_SELLER_PANEL,
   SCENE_SELLER_CREATE_ACCOUNT,
@@ -58,6 +60,7 @@ export function createStage(): Scenes.Stage<BotContext> {
     paymentPendingScene,
     manageAccountsScene,
     viewAccountScene,
+    renewAccountScene,
     testAccountScene,
     supportScene,
     errorScene,

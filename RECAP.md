@@ -1,43 +1,31 @@
 # Commit Recap
 
-## What was built
-A full Persian Telegram VPN bot with Marzban integration — DB layer, message system, all 9 scenes, admin payment approval, and account provisioning.
+## What changed
+Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
 
-## Key choices
-- **Prisma 7** with PostgreSQL — 5 models (User, Plan, Account, Payment, BotMessage)
-- **DB-backed messages** — all Persian text in `bot_messages` table, 5min in-memory cache
-- **Telegraf scenes** — 9 scenes following FSM pattern, all reading from design specs
-- **Manual payment** — user sends receipt photo, admin approves/rejects via inline buttons
-- **Test accounts** — 1 hour, 100MB, one per user, checked via `has_test` flag
-- **Zod env validation** — fail fast on startup if any required var is missing
-- **103 tests** across 14 files, all passing
+## Key decisions
+- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
+- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
+- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
+- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
+- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
 
-## Files
+## Files changed
 ```
-prisma/
-├── schema.prisma         # 5 models + 2 enums
-└── prisma.config.ts      # Prisma 7 config
+prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
+prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
 
-src/core/
-├── marzban/              # Marzban API client (44 methods, 76 tests)
-├── db/                   # Prisma singleton (initDb/getDb)
-└── utils/                # Config (Zod), formatting (Persian digits, bytes, price)
+src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
+src/bot/context.ts                             # Added renewAccountId to SessionData
+src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
+src/bot/scenes/index.ts                        # Registered renewAccountScene
+src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
+src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
+src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
+src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
+src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
 
-src/bot/
-├── bot.ts                # createBot() wiring
-├── main.ts               # Entry point
-├── context.ts            # BotContext + SessionData
-├── scenes/               # 9 scenes (start, home, buy, payment, manage, view, test, support, error)
-├── handlers/             # Admin payment approve/reject
-├── middlewares/           # Error handler
-└── services/             # Message service (DB + cache)
-
-src/db/seeds/seed.ts      # Default plans + 22 bot messages
+WORKING.md                                     # Updated with full renew feature spec
+ARCHITECTURE.md                                # Updated with renew architecture decisions
+DESIGN.md                                      # Updated with renew scene map + flows
 ```
-
-## Dig deeper
-- Architecture & decisions → `ARCHITECTURE.md`
-- Scene reference & API design → `DESIGN.md`
-- Scene specs → `design/bot/scenes/*.md`
-- Message registry → `design/bot/messages.md`
-- Marzban service guide → `docs/src/core/marzban/marzban_service.md`

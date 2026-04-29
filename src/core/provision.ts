@@ -82,6 +82,103 @@ export async function provisionAccount(
   return { marzbanUsername, subToken, accountId: account.id, expiresAt };
 }
 
+// ── Renew ────────────────────────────────────────────────────────
+
+export interface RenewRequest {
+  transactionId: number;
+  accountId: number;
+  dataLimitToAdd: number;  // bytes to ADD to current limit
+  durationDays: number;
+}
+
+export interface RenewResult {
+  marzbanUsername: string;
+  newDataLimit: number;    // bytes — the new total after addition
+  newExpiresAt: Date;
+  accountId: number;
+}
+
+/**
+ * Renew an existing Marzban VPN account.
+ *
+ * Fair accumulation logic:
+ * 1. Data limit: current Marzban data_limit + requested data
+ * 2. Expiry: max(current_expire, now) + duration_days
+ * 3. Reactivates expired/limited/disabled accounts
+ * 4. Does NOT reset data usage
+ *
+ * Throws on failure — caller is responsible for updating transaction status.
+ */
+export async function renewAccount(
+  db: PrismaClient,
+  req: RenewRequest,
+): Promise<RenewResult> {
+  const marzban = getMarzban();
+
+  // Fetch the account from DB
+  const account = await db.account.findUnique({ where: { id: req.accountId } });
+  if (!account) {
+    throw new Error(`Account ${req.accountId} not found`);
+  }
+
+  // Fetch current state from Marzban (authoritative source)
+  const marzbanUser = await marzban.getUser(account.marzban_username);
+
+  // Calculate new data limit: add to current
+  const currentDataLimit = marzbanUser.data_limit ?? 0;
+  const newDataLimit = currentDataLimit + req.dataLimitToAdd;
+
+  // Calculate new expiry: max(current_expire, now) + duration_days
+  const nowTimestamp = Math.floor(Date.now() / 1000);
+  const currentExpire = marzbanUser.expire ?? nowTimestamp;
+  const baseExpire = Math.max(currentExpire, nowTimestamp);
+  const newExpireTimestamp = baseExpire + req.durationDays * 24 * 60 * 60;
+
+  // Apply changes to Marzban
+  await marzban.modifyUser(account.marzban_username, {
+    data_limit: newDataLimit,
+    expire: newExpireTimestamp,
+    status: 'active',
+  });
+
+  const newExpiresAt = new Date(newExpireTimestamp * 1000);
+
+  // Update DB account
+  await db.account.update({
+    where: { id: req.accountId },
+    data: { expires_at: newExpiresAt },
+  });
+
+  // Link transaction to account and mark completed
+  await db.transaction.update({
+    where: { id: req.transactionId },
+    data: { account_id: req.accountId, status: 'completed' },
+  });
+
+  return {
+    marzbanUsername: account.marzban_username,
+    newDataLimit,
+    newExpiresAt,
+    accountId: req.accountId,
+  };
+}
+
+/**
+ * Build the user notification message after account renewal.
+ */
+export function buildRenewNotification(
+  result: RenewResult,
+): string {
+  return (
+    `✅ اکانت شما با موفقیت تمدید شد!\n\n` +
+    `📛 نام: ${result.marzbanUsername}\n` +
+    `📦 حجم جدید: ${formatBytes(result.newDataLimit)}\n` +
+    `⏰ انقضای جدید: ${formatDaysLeft(result.newExpiresAt)}`
+  );
+}
+
+// ── Buy notification ─────────────────────────────────────────────
+
 /**
  * Build the user notification message after account provisioning.
  */

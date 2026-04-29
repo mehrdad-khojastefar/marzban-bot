@@ -44,6 +44,14 @@ const defaultMessages: { key: string; text: string }[] = [
   { key: 'test.failed', text: 'خطا در ساخت اکانت تستی. لطفاً دوباره تلاش کنید.' },
   // support
   { key: 'support.message', text: 'برای ارتباط با پشتیبانی به آیدی زیر پیام دهید:\n{config.support_username}' },
+  // renew
+  { key: 'renew.select_plan', text: 'پلن تمدید را انتخاب کنید:' },
+  { key: 'renew.select_gb', text: 'حجم تمدید را انتخاب کنید:' },
+  { key: 'renew.disabled', text: 'تمدید اکانت فعلاً غیرفعال است.' },
+  { key: 'renew.success', text: '✅ اکانت شما با موفقیت تمدید شد!' },
+  { key: 'renew.payment_instructions', text: 'لطفاً مبلغ تمدید را واریز کنید:' },
+  { key: 'renew.no_plans', text: 'در حال حاضر پلنی برای تمدید موجود نیست.' },
+  { key: 'renew.no_card', text: '❌ کارت بانکی برای شما تعیین نشده. لطفاً با پشتیبانی تماس بگیرید.' },
   // error
   { key: 'error.message', text: 'خطایی رخ داد. لطفاً دوباره تلاش کنید.' },
   // seller panel
@@ -113,6 +121,7 @@ const defaultSettings: { key: string; value: string }[] = [
   { key: 'buy_enabled', value: 'false' },
   { key: 'payment_method', value: 'manual' }, // 'manual' or 'premzy'
   { key: 'test_enabled', value: 'false' },
+  { key: 'renew_enabled', value: 'false' },
 ];
 
 function generateCode(): string {

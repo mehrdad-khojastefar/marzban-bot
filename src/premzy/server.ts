@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Telegraf } from 'telegraf';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { provisionAccount, buildFullAccountNotification } from '../core/provision';
+import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../core/provision';
 import { formatBytes } from '../core/utils/format';
 
 interface PremzyServerConfig {
@@ -140,27 +140,52 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
         planLabel = formatBytes(dataLimit);
       }
 
-      // Provision the account
-      const result = await provisionAccount(db, {
-        transactionId: transaction.id,
-        userId: transaction.user_id,
-        planId: transaction.plan_id,
-        dataLimit,
-        durationDays,
-        amount: transaction.amount,
-      });
-
-      // Notify user via Telegram
-      if (transaction.user) {
-        try {
-          const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
-          await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
-        } catch (notifyErr) {
-          console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+      // Route based on transaction type
+      if (transaction.type === 'renew') {
+        // ── Renew flow ──
+        if (!transaction.account_id) {
+          throw new Error(`Renew transaction ${transactionId} has no account_id`);
         }
-      }
 
-      console.log(`Premzy callback: ${transactionId} → account=${result.marzbanUsername} ✅`);
+        const renewResult = await renewAccount(db, {
+          transactionId: transaction.id,
+          accountId: transaction.account_id,
+          dataLimitToAdd: dataLimit,
+          durationDays,
+        });
+
+        if (transaction.user) {
+          try {
+            const msg = buildRenewNotification(renewResult);
+            await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+          } catch (notifyErr) {
+            console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+          }
+        }
+
+        console.log(`Premzy callback: ${transactionId} → renewed account=${renewResult.marzbanUsername} ✅`);
+      } else {
+        // ── Buy flow (existing) ──
+        const result = await provisionAccount(db, {
+          transactionId: transaction.id,
+          userId: transaction.user_id,
+          planId: transaction.plan_id,
+          dataLimit,
+          durationDays,
+          amount: transaction.amount,
+        });
+
+        if (transaction.user) {
+          try {
+            const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
+            await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+          } catch (notifyErr) {
+            console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+          }
+        }
+
+        console.log(`Premzy callback: ${transactionId} → account=${result.marzbanUsername} ✅`);
+      }
 
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true }));
