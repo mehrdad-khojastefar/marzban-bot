@@ -1,194 +1,213 @@
-# Design
+# Design — Announcements
 
-## Scene Map
+## Scene Map Addition
 
 ```
-/start <code>
-  ├── No code + not registered → "لینک نامعتبر" error (dead end)
-  ├── Invalid code             → "لینک نامعتبر" error (dead end)
-  ├── New user + valid code    → register (random card, plan group) → HOME
-  └── Existing user            → update profile → HOME
-        ├── مدیریت اکانت‌ها           → MANAGE_ACCOUNTS → VIEW_ACCOUNT
-        ├── اکانت تستی                → TEST_ACCOUNT
-        ├── خرید اکانت                → BUY_ACCOUNT → PAYMENT_PENDING
-        │     ├── per_gb group → pick GB → payment
-        │     └── fixed group  → pick plan → payment
-        ├── پشتیبانی                  → SUPPORT
-        │
-        ── seller-only ──
-        ├── 🏪 پنل فروشنده            → SELLER_PANEL
-        │     ├── ساخت اکانت          → SELLER_CREATE_ACCOUNT
-        │     ├── اکانت‌ها             → SELLER_ACCOUNTS → SELLER_VIEW_ACCOUNT
-        │     └── گزارش مالی           → SELLER_REPORT
-        │
-        ── admin-only ──
-        ├── ⚙️ مدیریت فروشندگان       → ADMIN_SELLERS → ADMIN_SELLER_DETAIL
-        │     ├── پلن‌ها               → ADMIN_SELLER_PLANS
-        │     └── تسویه               → ADMIN_SELLER_ACCOUNTS
-        ├── 💳 مدیریت کارت‌ها          → ADMIN_BANK_CARDS
-        ├── 👤 مدیریت کاربران         → ADMIN_USERS
-        ├── 📦 مدیریت پلن‌گروپ‌ها       → ADMIN_PLAN_GROUPS
-        └── 📋 مدیریت اکانت‌ها         → ADMIN_ACCOUNTS → ADMIN_VIEW_ACCOUNT
+HOME
+  ── admin-only ──
+  ├── ... (existing admin buttons)
+  └── 📢 اطلاعیه‌ها               → ADMIN_ANNOUNCEMENTS
+        ├── ارسال اطلاعیه جدید     → ADMIN_ANNOUNCEMENT_COMPOSE
+        │     ├── enter text → preview → confirm target → sending
+        │     └── 🔙 بازگشت
+        ├── تاریخچه اطلاعیه‌ها     → ADMIN_ANNOUNCEMENT_HISTORY
+        │     └── select one      → ADMIN_ANNOUNCEMENT_DETAIL
+        └── 🔙 بازگشت
 ```
 
-## Modified Scenes
+## New Scenes
 
-### START
-- Parse deep link parameter: `/start <code>`
-- **New user + valid code:** create User with `plan_group_id` + random `bank_card_id` → HOME
-- **New user + no/invalid code:** show error message, stop
-- **Existing user:** update first_name/last_name/username → HOME (ignore code)
-- Seller check still applies (link seller on first start)
+### ADMIN_ANNOUNCEMENTS
 
-### HOME
-- "خرید اکانت" gated by `buy_enabled` setting (toast if disabled)
-- "🏪 پنل فروشنده" only for active sellers
-- Admin buttons only for `ADMIN_CHAT_ID`:
-  - "⚙️ مدیریت فروشندگان"
-  - "💳 مدیریت کارت‌ها"
-  - "👤 مدیریت کاربران"
-  - "📦 مدیریت پلن‌گروپ‌ها" (new)
+Main announcements hub for admin.
 
-### BUY_ACCOUNT
-- Fetches user's PlanGroup to determine flow type
-- **Per-GB flow:** show GB picker → calculate price → payment
-- **Fixed flow:** show plan list → payment (existing behavior)
-- Fetches user's assigned bank card for payment instructions
-- If no card assigned → show error, block purchase
-- Payment record stores `bank_card_id` for financial tracking
+**UI:**
+```
+📢 مدیریت اطلاعیه‌ها
 
-## New/Updated Scenes
+[ ✉️ ارسال اطلاعیه جدید ]
+[ 📋 تاریخچه اطلاعیه‌ها ]
+[ 🔙 بازگشت ]
+```
 
-| Scene | Purpose |
+**Messages:**
+| Key | Text |
 |---|---|
-| ADMIN_BANK_CARDS | Bank card CRUD: list, add, toggle active, delete |
-| ADMIN_USERS | User management: list users, view details, reassign card |
-| ADMIN_PLAN_GROUPS | Plan group management: list, create (auto-generates code), edit plans |
+| `announcement.menu` | `📢 مدیریت اطلاعیه‌ها` |
 
-## Self-Registration Flow
+---
 
+### ADMIN_ANNOUNCEMENT_COMPOSE
+
+Multi-step flow: text → preview → target → confirm → send.
+
+**Step 1 — Enter text:**
 ```
-User taps deep link: t.me/doveng_bot?start=f47ac10b
-  → Bot parses code from /start payload
-  → Look up PlanGroup where code = "f47ac10b" AND is_active = true
-  → If not found → send error message, stop
-  → If user already exists by chat_id → update profile → HOME
-  → Pick random active BankCard
-  → Create User:
-      chat_id, first_name, last_name, username,
-      plan_group_id, bank_card_id (nullable if no cards)
-  → Seller check → HOME
+متن اطلاعیه را وارد کنید:
+
+(HTML مجاز است: <b>بولد</b>، <i>ایتالیک</i>)
+
+[ 🔙 بازگشت ]
 ```
 
-## Buy Flow — Per-GB Group
+Admin types the announcement text as a regular message.
 
+**Step 2 — Preview + target:**
 ```
-User taps "خرید اکانت"
-  → Check buy_enabled → if false, toast
-  → Fetch user.plan_group (type = per_gb)
-  → Show GB picker:
-      "هر گیگابایت {price_per_gb} تومان
-       حجم مورد نظر را انتخاب کنید:"
-      [ 1 گیگ ] [ 2 گیگ ] [ 3 گیگ ]
-      [ 5 گیگ ] [ 10 گیگ ] [ 20 گیگ ]
-      [ 50 گیگ ] [ 100 گیگ ]
-      [ 🔙 بازگشت ]
-  → User picks GB
-  → Fetch user.bank_card → if null, show error
-  → Show payment instructions:
-      مبلغ: {gb × price_per_gb} تومان
-      شماره کارت:
-      `6037-XXXX-XXXX-XXXX`
-      به نام: {holder_name}
-      پس از واریز، رسید خود را ارسال کنید.
-  → Create Payment (status: pending, amount, data_limit, bank_card_id, plan_id = null)
-  → PAYMENT_PENDING
+📋 پیش‌نمایش:
+━━━━━━━━━━━━━━━━
+{announcement_text}
+━━━━━━━━━━━━━━━━
+
+مخاطبین: {target_description}
+تعداد: {recipient_count} کاربر
+
+[ 👥 همه کاربران ]
+[ 📦 بر اساس پلن‌گروپ ]
+[ ✅ ارسال ]
+[ 🔙 بازگشت ]
 ```
 
-## Buy Flow — Fixed Group
+- Default target: all approved users
+- "بر اساس پلن‌گروپ" shows plan group picker (list of active groups)
+- After target is selected, recipient count updates
+- "ارسال" sends the broadcast
 
+**Step 3 — Confirmation:**
 ```
-User taps "خرید اکانت"
-  → Check buy_enabled → if false, toast
-  → Fetch user.plan_group (type = fixed) + plans
-  → Show plan list:
-      "پلن مورد نظر خود را انتخاب کنید:"
-      [ 🔹 5 گیگ - 30 روزه - 600 تومان ]
-      [ 🔹 10 گیگ - 30 روزه - 1,100 تومان ]
-      [ 🔙 بازگشت ]
-  → User picks plan
-  → Fetch user.bank_card → if null, show error
-  → Show payment instructions (same format as per_gb)
-  → Create Payment (status: pending, plan_id, amount, bank_card_id)
-  → PAYMENT_PENDING
+⚠️ اطلاعیه به {recipient_count} کاربر ارسال خواهد شد.
+
+مطمئنید؟
+
+[ ✅ بله، ارسال شود ]
+[ ❌ انصراف ]
 ```
 
-## Seller Account Creation Flow
-
+**Step 4 — Sending feedback:**
 ```
-Pick plan → Marzban addUser (s_XXXXXX, 30d, plan data_limit)
-  → Save Account (payment_status: unpaid)
-  → Prompt note (optional)
-  → Send subscription link + config links
-```
+📤 در حال ارسال...
 
-## Admin Settlement Flow
+ارسال شده: {delivered}/{total}
+ناموفق: {failed}
 
-```
-Filter (all/unpaid/paid) → checkbox select → batch mark as paid
-Or: "تسویه همه" → mark ALL unpaid as paid
+[ ❌ لغو ارسال ]
 ```
 
-## Session Data
+This message updates periodically (every 50 deliveries or every 5 seconds, whichever comes first) via `editMessageText`.
+
+**Step 5 — Completion:**
+```
+✅ اطلاعیه ارسال شد.
+
+ارسال شده: {delivered}/{total}
+ناموفق: {failed}
+
+[ 🔙 بازگشت ]
+```
+
+**Messages:**
+| Key | Text |
+|---|---|
+| `announcement.compose.enter_text` | `متن اطلاعیه را وارد کنید:\n\n(HTML مجاز است: <b>بولد</b>، <i>ایتالیک</i>)` |
+| `announcement.compose.preview` | `📋 پیش‌نمایش:\n━━━━━━━━━━━━━━━━\n{text}\n━━━━━━━━━━━━━━━━\n\nمخاطبین: {target}\nتعداد: {count} کاربر` |
+| `announcement.compose.confirm` | `⚠️ اطلاعیه به {count} کاربر ارسال خواهد شد.\n\nمطمئنید؟` |
+| `announcement.compose.sending` | `📤 در حال ارسال...\n\nارسال شده: {delivered}/{total}\nناموفق: {failed}` |
+| `announcement.compose.done` | `✅ اطلاعیه ارسال شد.\n\nارسال شده: {delivered}/{total}\nناموفق: {failed}` |
+| `announcement.compose.cancelled` | `❌ ارسال لغو شد.\n\nارسال شده: {delivered}/{total}\nناموفق: {failed}` |
+| `announcement.target.all` | `همه کاربران تأیید‌شده` |
+| `announcement.target.plan_group` | `پلن‌گروپ: {group_name}` |
+
+---
+
+### ADMIN_ANNOUNCEMENT_HISTORY
+
+Paginated list of past announcements.
+
+**UI:**
+```
+📋 تاریخچه اطلاعیه‌ها
+
+1. ✅ 1404/02/05 — 150 کاربر — "متن کوتاه..."
+2. ✅ 1404/01/28 — 200 کاربر — "متن کوتاه..."
+3. 📤 1404/01/20 — 180 کاربر — "متن کوتاه..."
+
+[ ◀️ ] [ ▶️ ]
+[ 🔙 بازگشت ]
+```
+
+Each row is a callback button leading to ADMIN_ANNOUNCEMENT_DETAIL.
+
+**Messages:**
+| Key | Text |
+|---|---|
+| `announcement.history.title` | `📋 تاریخچه اطلاعیه‌ها` |
+| `announcement.history.empty` | `هنوز اطلاعیه‌ای ارسال نشده.` |
+| `announcement.history.row` | `{status_icon} {date} — {count} کاربر — "{preview}"` |
+
+---
+
+### ADMIN_ANNOUNCEMENT_DETAIL
+
+Full details of a single announcement.
+
+**UI:**
+```
+📢 جزئیات اطلاعیه
+
+📅 تاریخ: 1404/02/05
+👥 مخاطبین: همه کاربران
+✅ ارسال شده: 148/150
+❌ ناموفق: 2
+
+━━━━━━━━━━━━━━━━
+{full_announcement_text}
+━━━━━━━━━━━━━━━━
+
+[ 🔙 بازگشت ]
+```
+
+**Messages:**
+| Key | Text |
+|---|---|
+| `announcement.detail` | `📢 جزئیات اطلاعیه\n\n📅 تاریخ: {date}\n👥 مخاطبین: {target}\n✅ ارسال شده: {delivered}/{total}\n❌ ناموفق: {failed}\n\n━━━━━━━━━━━━━━━━\n{text}\n━━━━━━━━━━━━━━━━` |
+
+---
+
+## HOME Scene Change
+
+Add one button to admin section:
+
+```
+── admin-only ──
+├── ... (existing)
+└── 📢 اطلاعیه‌ها    → callback: 'admin_announcements'
+```
+
+---
+
+## Session Data Additions
 
 ```typescript
-// user info
-userId?: number
+// announcement compose flow
+announcementText?: string           // text entered by admin
+announcementTargetType?: 'all' | 'plan_group'
+announcementTargetGroupId?: number  // selected plan group ID
+announcementId?: number             // ID of announcement being sent/viewed
 
-// payment flow
-selectedPlanId?: number
-selectedGb?: number          // for per_gb flow
-pendingPaymentId?: number
-
-// seller flows
-sellerId?: number
-selectedSellerPlanId?: number
-awaitingQuantity?: boolean
-awaitingAccountName?: boolean
-pendingDataLimit?: number
-pendingPrice?: number
-pendingPlanName?: string
-
-// admin seller management
-managingSellerId?: number
-sellerEditField?: 'note' | 'link_prefix'
-managingSellerPlanId?: number
-accountFilter?: 'all' | 'unpaid' | 'paid'
-selectedAccountIds?: number[]
-currentPage?: number
-searchQuery?: string
-
-// admin bank card management
-adminCardStep?: 'number' | 'holder' | 'bank'
-pendingCardNumber?: string
-pendingCardHolder?: string
-
-// admin plan group management
-managingGroupId?: number
+// announcement history
+announcementPage?: number           // pagination
 ```
 
-## Setting System
+---
 
-```typescript
-import { getSetting } from '@/bot/services/settingService'
-const buyEnabled = await getSetting('buy_enabled')  // "true" | "false"
-```
+## channelCheck Setting Toggle
 
-- DB-backed (`bot_settings` table), 30s cache TTL
-- `initSettingService(db)` at startup
+No new scene needed. Admin can toggle `channel_check_enabled` via the existing BotSettings management (or direct DB update for now). If an admin scene for settings exists later, this setting slots in naturally.
 
-## UI Rules
-- **Single-message UI:** Only ONE message per scene. Always `editMessageText`, never send new.
-- **Exceptions:** Config/subscription links sent as separate copyable messages.
-- **Language:** Persian (فارسی)
-- **Copyable text:** Wrap in ``` for code blocks (card numbers, links, etc.)
+---
+
+## UI Rules (same as rest of bot)
+- Single-message UI — `editMessageText` everywhere
+- Exception: the broadcast itself sends NEW messages to users (obviously)
+- Persian language for all text
+- All copy from `bot_messages` table
