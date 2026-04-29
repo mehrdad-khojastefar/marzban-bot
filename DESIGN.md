@@ -187,6 +187,31 @@ const buyEnabled = await getSetting('buy_enabled')  // "true" | "false"
 - DB-backed (`bot_settings` table), 30s cache TTL
 - `initSettingService(db)` at startup
 
+## Admin Account Search (ADMIN_ACCOUNTS)
+
+Search is triggered by the "🔍 جستجو" button. Admin types any identifier and the
+bot searches across all fields simultaneously.
+
+```
+Admin taps "🔍 جستجو"
+  → Bot: "جستجو بر اساس نام کاربری مرزبان، توکن اشتراک، چت آیدی، یوزرنیم تلگرام یا یادداشت:"
+  → Admin types search text
+  → Build OR query:
+      - marzban_username CONTAINS input
+      - marzban_sub_token CONTAINS input
+      - note CONTAINS input
+      - user.username CONTAINS input
+      - (if numeric) user.chat_id = input
+  → Combined with active filter (all/unpaid/paid)
+  → Show results with pagination
+  → "❌ پاک کردن جستجو" clears search
+```
+
+**Search prompt text (Persian):**
+```
+جستجو بر اساس نام کاربری مرزبان، توکن اشتراک، چت آیدی، یوزرنیم تلگرام یا یادداشت:
+```
+
 ## UI Rules
 - **Single-message UI:** Only ONE message per scene. Always `editMessageText`, never send new.
 - **Exceptions:** Config/subscription links sent as separate copyable messages.

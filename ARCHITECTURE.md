@@ -159,6 +159,25 @@ getSetting('buy_enabled')  // → "true" | "false"
 ### `messageService`
 DB-backed message templates with `{placeholder}` interpolation. Cached with 30s TTL.
 
+## Admin Account Search
+
+The ADMIN_ACCOUNTS scene provides flexible search across multiple identifiers.
+A single text input is matched against all of the following fields using an `OR` query:
+
+| Field | Match type | Notes |
+|---|---|---|
+| `account.marzban_username` | `contains` (case-insensitive) | Primary identifier |
+| `account.marzban_sub_token` | `contains` (case-insensitive) | Subscription token (partial match) |
+| `account.note` | `contains` (case-insensitive) | Free-text note |
+| `account.user.username` | `contains` (case-insensitive) | Telegram @username |
+| `account.user.chat_id` | exact match | Only when input is numeric |
+
+**Design decisions:**
+- Chat ID uses exact match (not substring) because partial numeric matches would be meaningless noise.
+- All string fields use case-insensitive `contains` — admin may paste partial tokens or remember only part of a username.
+- The `OR` array is built dynamically: the `chat_id` condition is only added when the input is a valid number, avoiding BigInt parse errors.
+- Search composes with the existing payment status filter — both `where` conditions are ANDed together.
+
 ## Startup Sequence
 
 ```
