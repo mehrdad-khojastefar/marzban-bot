@@ -13,6 +13,7 @@
     "bot:start": "npx tsx src/bot/main.ts",
     "sub:start": "npx tsx src/sub/main.ts",
     "premzy:start": "npx tsx src/premzy/main.ts",
+    "premzy:link": "npx tsx src/premzy/generateLink.ts",
     "keys:generate": "mkdir -p keys && openssl ecparam -name prime256v1 -genkey -noout -out keys/private.pem && openssl ec -in keys/private.pem -pubout -out keys/public.pem && echo 'Keys generated in keys/ — share keys/public.pem with Premzy, keep keys/private.pem secret'"
   },
   "dependencies": {
