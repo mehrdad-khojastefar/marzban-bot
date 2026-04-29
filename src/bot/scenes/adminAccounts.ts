@@ -44,10 +44,19 @@ async function renderAccountList(ctx: BotContext) {
   }
 
   if (search) {
-    where.OR = [
+    const orConditions: Prisma.AccountWhereInput[] = [
       { marzban_username: { contains: search, mode: 'insensitive' } },
+      { marzban_sub_token: { contains: search, mode: 'insensitive' } },
       { note: { contains: search, mode: 'insensitive' } },
+      { user: { username: { contains: search, mode: 'insensitive' } } },
     ];
+
+    const numericInput = parseInt(search);
+    if (!isNaN(numericInput) && String(numericInput) === search) {
+      orConditions.push({ user: { chat_id: BigInt(numericInput) } });
+    }
+
+    where.OR = orConditions;
   }
 
   const [accounts, totalCount] = await Promise.all([
@@ -460,7 +469,7 @@ adminAccountsScene.action('search', async (ctx) => {
   await ctx.answerCbQuery();
   await sendOrEdit(
     ctx,
-    'نام اکانت یا یادداشت را جستجو کنید:',
+    'جستجو بر اساس نام کاربری مرزبان، توکن اشتراک، چت آیدی، یوزرنیم تلگرام یا یادداشت:',
     Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back_list')]]),
   );
 });
