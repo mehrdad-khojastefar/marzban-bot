@@ -1,166 +1,177 @@
-# Architecture
+# Architecture — User Notification System
 
-## Models
+## Overview
 
-### `User`
-Telegram user. Self-registers via deep link (`/start=<code>`). Has `plan_group_id` set from deep link and `bank_card_id` assigned randomly from active cards at registration time.
+Background scheduler that monitors active VPN accounts and notifies users via Telegram when they're approaching data or time limits. Runs independently of user interactions — no scene, no command trigger.
 
-### `Seller`
-Trusted reseller added by admin via chat ID. Can exist before the person starts the bot (`user_id = null`). Linked to `User` on first `/start`.
+## Data Sources
 
-### `SellerPlan`
-Per-seller pricing tiers. Admin creates/manages these. Each plan has name, data_limit (bytes), and price (Toman). Duration is fixed at 30 days — not stored per-plan.
+### Marzban API (`getUser(username)`)
+Returns `UserResponse` with:
+- `used_traffic` — bytes consumed
+- `data_limit` — bytes allowed (null = unlimited)
+- `expire` — Unix timestamp of account expiry (null = no expiry)
+- `status` — `active` / `disabled` / `limited` / `expired` / `on_hold`
 
-### `PlanGroup`
-Defines a set of plans available to users who register with a specific deep link code. Two types:
-- **`per_gb`**: User picks GB count, price = count × `price_per_gb`. No Plan records needed.
-- **`fixed`**: Pre-defined Plan records with fixed data_limit and price.
+### Local DB (`accounts` table)
+- `marzban_username` — key to fetch from Marzban
+- `user_id` — FK to `users.id` (needed for `chat_id` to send Telegram message)
+- `expires_at` — redundant with Marzban but useful for initial filtering
+- `created_at` — needed for speed-of-use calculation
 
-Each group has a unique `code` — first segment of a UUIDv4 (8 hex chars, e.g. `a1b2c3d4`), auto-generated when admin creates the group. Used in the deep link: `t.me/bot?start=<code>`.
+## New Model: `NotificationLog`
 
-### `Plan`
-Belongs to a `PlanGroup` of type `fixed`. Has name, data_limit, duration_days, price, is_active.
+Tracks what was sent and when, prevents duplicate notifications, supports silence.
 
-### `BankCard`
-Admin-managed bank cards for payment. Multiple cards supported. Randomly assigned to users at registration. Stores card_number (no dashes), holder_name, bank_name (optional), is_active flag.
+```prisma
+model NotificationLog {
+  id              Int       @id @default(autoincrement())
+  account_id      Int
+  rule            String    // "speed_predict" | "low_data" | "low_time"
+  sent_at         DateTime  @default(now())
+  silenced_until  DateTime? // set when user clicks "silence 3 days"
+  account         Account   @relation(fields: [account_id], references: [id])
 
-### `Payment`
-Tracks a user's purchase attempt. Status flow: `pending` → `awaiting_approval` → `approved` / `rejected`. Stores `bank_card_id` to record which card was shown for this payment (financial tracking). Also stores receipt_file_id (Telegram photo), reviewed_by (admin chat_id).
-
-### `Account`
-VPN account provisioned in Marzban. Two creation paths:
-- **User buy flow:** created after admin approves payment
-- **Seller flow:** created instantly by seller, payment tracked via `payment_status`
-
-Has `seller_id`, `seller_plan_id`, `payment_status` (unpaid/paid), `note` (searchable by seller). All nullable — non-seller accounts unaffected.
-
-### `BotSetting`
-Key-value runtime feature flags. Cached in-memory with 30s TTL. No restart needed to toggle features.
-
-### `BotMessage`
-User-facing text templates. All bot messages come from DB, never hardcoded. Supports `{placeholder}` interpolation.
-
-## Key Relationships
-
-```
-User → PlanGroup (many-to-one: determines which plans user sees)
-User → BankCard (many-to-one: randomly assigned at registration)
-User → Account[] (user's VPN accounts)
-User → Payment[] (user's purchase attempts)
-PlanGroup → Plan[] (fixed groups have pre-defined plans)
-Payment → BankCard (which card received this payment — financial tracking)
-Payment → Plan (nullable — null for per_gb purchases)
-Seller → User (optional, linked on /start)
-Seller → SellerPlan[] (per-seller pricing)
-Seller → Account[] (accounts created by this seller)
-Account → SellerPlan (tracks which plan = how much is owed)
-BankCard → User[] (which users are assigned this card)
-BankCard → Payment[] (which payments were directed to this card)
+  @@unique([account_id, rule])
+  @@map("notification_logs")
+}
 ```
 
-## Self-Registration via Deep Link
+**One row per (account, rule).** Updated on each send. `silenced_until` checked before sending — if set and in the future, skip.
 
-Users register themselves. No admin gate.
+Why a single row per (account, rule) instead of an append log:
+- We only care about the latest state (last sent time + silence status)
+- No historical reporting requirement
+- Simpler queries, no cleanup needed
 
+## Notification Rules
+
+All rules evaluate per-account. An account can trigger multiple rules simultaneously.
+
+### Rule 1: Speed Prediction (`speed_predict`)
 ```
-User opens t.me/bot?start=<code>
-  → Bot receives /start <code>
-  → Look up PlanGroup by code
-  → If invalid code → show error, stop
-  → Create User record:
-      - chat_id, first_name, last_name, username from Telegram
-      - plan_group_id from matched group
-      - bank_card_id = random active card
-  → Transition to HOME
+average_speed = used_traffic / time_since_creation
+remaining_data = data_limit - used_traffic
+time_to_limit = remaining_data / average_speed
 ```
+- Trigger: `time_to_limit < 7 days`
+- Message includes: predicted days + hours until limit
+- Frequency: once per day (checked via `sent_at`)
 
-**Returning user:** If user already exists, update profile fields, go to HOME. Plan group is NOT changed on re-start (locked at registration).
-
-**No valid deep link:** If someone sends bare `/start` without a code (and isn't registered), show error message asking them to use the correct link.
-
-## Bank Card System
-
-Cards are admin-managed via the ADMIN_BANK_CARDS scene. Assigned randomly to users at registration.
-
+### Rule 2: Low Data (`low_data`)
 ```
-Admin adds card (number, holder, bank) → BankCard record
-User registers via deep link → random active card assigned → User.bank_card_id set
-User buys → sees their assigned card in payment instructions
-Payment record stores bank_card_id for financial tracking
+remaining_data = data_limit - used_traffic
 ```
+- Trigger: `remaining_data < 1 GB`
+- Frequency: once per day
 
-**Display format:** Card number shown with dashes for readability (`6037-XXXX-XXXX-XXXX`). Stored without dashes in DB.
-
-**Fallback:** If user has no assigned card (edge case — all cards deactivated after registration) → block purchase, show error.
-
-**Random assignment:** Pick a random card from active cards. If no active cards exist at registration time → still create user but with `bank_card_id = null`. Admin must add a card and reassign later.
-
-## Financial Tracking
-
-Every Payment records `bank_card_id` — the card shown to the user for that specific purchase. This enables:
-- Total revenue per card
-- Which users paid to which card
-- Card-level financial reporting
-
-Even if user's assigned card changes later, historical payments still reference the original card.
-
-## Plan Groups — Concrete Setup
-
-Codes are auto-generated (first 8 chars of UUIDv4). Examples below use placeholder codes.
-
-### Group 1: Per-GB (`code: e.g. "f47ac10b"`)
-- Type: `per_gb`
-- `price_per_gb`: 300 (Toman)
-- `duration_days`: 30
-- User picks GB count (1–100) → price = count × 300
-- Deep link: `t.me/doveng_bot?start=f47ac10b`
-
-### Group 2: Fixed Packages (`code: e.g. "7c9e6679"`)
-- Type: `fixed`
-- Plans:
-  - 5GB — 600 Toman — 30 days
-  - 10GB — 1,100 Toman — 30 days
-- Deep link: `t.me/doveng_bot?start=7c9e6679`
-
-Codes are generated at group creation time via `crypto.randomUUID().split('-')[0]`.
-
-## Seller Identity Resolution
-
+### Rule 3: Low Time (`low_time`)
 ```
-Admin adds by chat_id → Seller record (user_id = null)
-Person /starts bot → match by chat_id → link user_id, fill name/username from Telegram
+time_left = expire - now
+```
+- Trigger: `time_left < 5 days`
+- Frequency: once per day
+
+### Frequency Enforcement
+Each rule sends at most once per 24 hours per account. Checked via `notification_logs.sent_at`:
+```
+skip if: now - sent_at < 24 hours
+skip if: silenced_until > now
 ```
 
-## Seller Marzban Username Format
+## Silence Mechanism
 
-`s_` + 6 random lowercase alphanumeric (e.g. `s_a8f3k2`). Short, anonymous.
+User clicks inline button `🔇 سکوت ۳ روز` on any notification message.
+- Callback data: `notif_silence:<account_id>`
+- Handler sets `silenced_until = now + 3 days` on ALL notification_log rows for that account
+- Applies globally per account — silences all rule types, not just the one that triggered
 
-## Role Detection in HOME Scene
+Why per-account (not per-user): a user may have multiple accounts, and only want to silence the one they already know about.
 
-- **Admin:** Compare `chat_id` with `ADMIN_CHAT_ID` env var
-- **Seller:** Query `sellers` table by `chat_id` where `is_active = true`
-- **User:** Must exist in `users` table (self-registered via deep link)
-- Buttons conditionally rendered — non-matching users never see them
+## Scheduler
 
-## Buy Flow Gate
+### Implementation: `setInterval` in bot process
+No external cron. Runs inside the same Node.js process as the bot.
 
-`buy_enabled` BotSetting controls the "خرید اکانت" button. When `"false"` → inline toast, no scene transition. Seeded as `"false"` by default.
+```
+Interval: 1 hour
+```
 
-## Services
+Why not a separate process:
+- Single deployment target (one bot process)
+- Needs access to both Prisma client and Telegram bot instance
+- Account count is small enough that hourly batch processing is fine
 
-### `settingService`
-Same singleton pattern as `messageService`. In-memory cache with 30s TTL. All values are strings.
+### Scheduler Flow
+```
+Every 1 hour:
+  1. Query active accounts (expires_at > now, user.status = approved)
+  2. For each account:
+     a. Fetch Marzban user data (used_traffic, data_limit, expire)
+     b. Skip if status is not "active"
+     c. Skip if data_limit is null (unlimited)
+     d. Evaluate all 3 rules
+     e. For each triggered rule:
+        - Check notification_log for cooldown (24h) and silence
+        - If should send → send Telegram message → upsert notification_log
+  3. Log summary: checked N accounts, sent M notifications
+```
+
+### Rate Limiting
+- Marzban API: sequential requests with no artificial delay (local network, low volume)
+- Telegram API: Telegraf handles rate limiting internally
+- If account count grows past ~500, batch Marzban requests with concurrency limit (p-limit)
+
+## Service: `notificationService`
+
+Lives in `src/core/notification/`. Stateless functions, no singleton pattern needed.
 
 ```typescript
-initSettingService(db)
-getSetting('buy_enabled')  // → "true" | "false"
+// Evaluate an account against all rules, return which ones should fire
+evaluateAccount(marzbanUser: UserResponse, account: Account): NotificationRule[]
+
+// Check cooldown + silence, send if appropriate, update log
+processNotification(accountId: number, userId: number, rule: NotificationRule, data: NotificationData): Promise<boolean>
+
+// Start the interval timer
+startNotificationScheduler(bot: Telegraf, db: PrismaClient): void
 ```
 
-### `messageService`
-DB-backed message templates with `{placeholder}` interpolation. Cached with 30s TTL.
+## Callback Handler
 
-## Startup Sequence
+Registered globally (like `adminPayment` handler), not inside a scene:
+```typescript
+bot.action(/^notif_silence:(\d+)$/, async (ctx) => {
+  const accountId = parseInt(ctx.match[1])
+  // verify account belongs to ctx.from.id
+  // set silenced_until = now + 3 days for all rules on this account
+  // edit message to confirm silence
+})
+```
 
+## Startup Integration
+
+Added to the existing startup sequence in `src/bot/main.ts`:
 ```
-loadEnv() → initDb() → initMarzban() → initMessageService() → initSettingService() → createBot()
+loadEnv() → initDb() → initMarzban() → initMessageService() → initSettingService()
+  → createBot() → startNotificationScheduler(bot, db)
 ```
+
+## Bot Messages (new keys)
+
+| Key | Purpose |
+|---|---|
+| `notif_speed_predict` | "با سرعت فعلی مصرف، اکانت {display_name} تا {days} روز و {hours} ساعت دیگر به محدودیت می‌رسد." |
+| `notif_low_data` | "حجم باقی‌مانده اکانت {display_name}: {remaining_gb} گیگابایت" |
+| `notif_low_time` | "اکانت {display_name} تا {days} روز دیگر منقضی می‌شود." |
+| `notif_silenced` | "اعلان‌های این اکانت برای ۳ روز غیرفعال شد." |
+
+## Edge Cases
+
+- **Account with no data_limit (unlimited):** Skip data-related rules (1 & 2). Still evaluate time rule (3).
+- **Account with no expire:** Skip time rule (3). Still evaluate data rules (1 & 2).
+- **Account created moments ago (near-zero time_since_creation):** Speed calculation would be wildly inaccurate. Skip rule 1 if account age < 24 hours.
+- **User is banned/pending:** Pre-filtered by `user.status = approved` query.
+- **Marzban API down:** Catch error per-account, log, continue to next. Don't abort the whole batch.
+- **Bot restarted mid-interval:** `setInterval` resets. Worst case: a notification is delayed by up to 1 hour. Acceptable.
+- **Silence button on old message:** Still works — callback handler validates account ownership, not message age.

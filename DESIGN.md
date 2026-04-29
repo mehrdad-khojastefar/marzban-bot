@@ -1,194 +1,119 @@
-# Design
+# Design — User Notification System
 
-## Scene Map
+## No New Scenes
 
+This feature has no scenes. Notifications are pushed to users by the background scheduler — there is no user-initiated flow, no menu button, no navigation.
+
+The only user interaction is the inline "silence" button on notification messages.
+
+## Notification Message Format
+
+All notifications are sent via `ctx.telegram.sendMessage()` (not `editMessageText` — these are proactive messages, not responses to user actions).
+
+### Speed Prediction Notification
 ```
-/start <code>
-  ├── No code + not registered → "لینک نامعتبر" error (dead end)
-  ├── Invalid code             → "لینک نامعتبر" error (dead end)
-  ├── New user + valid code    → register (random card, plan group) → HOME
-  └── Existing user            → update profile → HOME
-        ├── مدیریت اکانت‌ها           → MANAGE_ACCOUNTS → VIEW_ACCOUNT
-        ├── اکانت تستی                → TEST_ACCOUNT
-        ├── خرید اکانت                → BUY_ACCOUNT → PAYMENT_PENDING
-        │     ├── per_gb group → pick GB → payment
-        │     └── fixed group  → pick plan → payment
-        ├── پشتیبانی                  → SUPPORT
-        │
-        ── seller-only ──
-        ├── 🏪 پنل فروشنده            → SELLER_PANEL
-        │     ├── ساخت اکانت          → SELLER_CREATE_ACCOUNT
-        │     ├── اکانت‌ها             → SELLER_ACCOUNTS → SELLER_VIEW_ACCOUNT
-        │     └── گزارش مالی           → SELLER_REPORT
-        │
-        ── admin-only ──
-        ├── ⚙️ مدیریت فروشندگان       → ADMIN_SELLERS → ADMIN_SELLER_DETAIL
-        │     ├── پلن‌ها               → ADMIN_SELLER_PLANS
-        │     └── تسویه               → ADMIN_SELLER_ACCOUNTS
-        ├── 💳 مدیریت کارت‌ها          → ADMIN_BANK_CARDS
-        ├── 👤 مدیریت کاربران         → ADMIN_USERS
-        ├── 📦 مدیریت پلن‌گروپ‌ها       → ADMIN_PLAN_GROUPS
-        └── 📋 مدیریت اکانت‌ها         → ADMIN_ACCOUNTS → ADMIN_VIEW_ACCOUNT
+⚠️ هشدار مصرف
+
+با سرعت فعلی مصرف، اکانت {display_name} تا {days} روز و {hours} ساعت دیگر به محدودیت حجم می‌رسد.
+
+حجم مصرف‌شده: {used_gb} از {total_gb} گیگابایت
+
+[ 🔇 سکوت ۳ روز ]
 ```
 
-## Modified Scenes
-
-### START
-- Parse deep link parameter: `/start <code>`
-- **New user + valid code:** create User with `plan_group_id` + random `bank_card_id` → HOME
-- **New user + no/invalid code:** show error message, stop
-- **Existing user:** update first_name/last_name/username → HOME (ignore code)
-- Seller check still applies (link seller on first start)
-
-### HOME
-- "خرید اکانت" gated by `buy_enabled` setting (toast if disabled)
-- "🏪 پنل فروشنده" only for active sellers
-- Admin buttons only for `ADMIN_CHAT_ID`:
-  - "⚙️ مدیریت فروشندگان"
-  - "💳 مدیریت کارت‌ها"
-  - "👤 مدیریت کاربران"
-  - "📦 مدیریت پلن‌گروپ‌ها" (new)
-
-### BUY_ACCOUNT
-- Fetches user's PlanGroup to determine flow type
-- **Per-GB flow:** show GB picker → calculate price → payment
-- **Fixed flow:** show plan list → payment (existing behavior)
-- Fetches user's assigned bank card for payment instructions
-- If no card assigned → show error, block purchase
-- Payment record stores `bank_card_id` for financial tracking
-
-## New/Updated Scenes
-
-| Scene | Purpose |
-|---|---|
-| ADMIN_BANK_CARDS | Bank card CRUD: list, add, toggle active, delete |
-| ADMIN_USERS | User management: list users, view details, reassign card |
-| ADMIN_PLAN_GROUPS | Plan group management: list, create (auto-generates code), edit plans |
-
-## Self-Registration Flow
-
+### Low Data Notification
 ```
-User taps deep link: t.me/doveng_bot?start=f47ac10b
-  → Bot parses code from /start payload
-  → Look up PlanGroup where code = "f47ac10b" AND is_active = true
-  → If not found → send error message, stop
-  → If user already exists by chat_id → update profile → HOME
-  → Pick random active BankCard
-  → Create User:
-      chat_id, first_name, last_name, username,
-      plan_group_id, bank_card_id (nullable if no cards)
-  → Seller check → HOME
+⚠️ حجم رو به اتمام
+
+حجم باقی‌مانده اکانت {display_name}: {remaining_gb} گیگابایت
+
+حجم مصرف‌شده: {used_gb} از {total_gb} گیگابایت
+
+[ 🔇 سکوت ۳ روز ]
 ```
 
-## Buy Flow — Per-GB Group
-
+### Low Time Notification
 ```
-User taps "خرید اکانت"
-  → Check buy_enabled → if false, toast
-  → Fetch user.plan_group (type = per_gb)
-  → Show GB picker:
-      "هر گیگابایت {price_per_gb} تومان
-       حجم مورد نظر را انتخاب کنید:"
-      [ 1 گیگ ] [ 2 گیگ ] [ 3 گیگ ]
-      [ 5 گیگ ] [ 10 گیگ ] [ 20 گیگ ]
-      [ 50 گیگ ] [ 100 گیگ ]
-      [ 🔙 بازگشت ]
-  → User picks GB
-  → Fetch user.bank_card → if null, show error
-  → Show payment instructions:
-      مبلغ: {gb × price_per_gb} تومان
-      شماره کارت:
-      `6037-XXXX-XXXX-XXXX`
-      به نام: {holder_name}
-      پس از واریز، رسید خود را ارسال کنید.
-  → Create Payment (status: pending, amount, data_limit, bank_card_id, plan_id = null)
-  → PAYMENT_PENDING
+⏳ زمان رو به اتمام
+
+اکانت {display_name} تا {days} روز دیگر منقضی می‌شود.
+
+تاریخ انقضا: {expire_date}
+
+[ 🔇 سکوت ۳ روز ]
 ```
 
-## Buy Flow — Fixed Group
+### Silence Confirmation
+After user clicks the silence button, edit the same message to append:
+```
+✅ اعلان‌های این اکانت برای ۳ روز غیرفعال شد.
+```
+The silence button is removed (replaced with the confirmation text via `editMessageReplyMarkup` with empty markup).
+
+## Inline Keyboard
+
+Every notification message has exactly one button:
 
 ```
-User taps "خرید اکانت"
-  → Check buy_enabled → if false, toast
-  → Fetch user.plan_group (type = fixed) + plans
-  → Show plan list:
-      "پلن مورد نظر خود را انتخاب کنید:"
-      [ 🔹 5 گیگ - 30 روزه - 600 تومان ]
-      [ 🔹 10 گیگ - 30 روزه - 1,100 تومان ]
-      [ 🔙 بازگشت ]
-  → User picks plan
-  → Fetch user.bank_card → if null, show error
-  → Show payment instructions (same format as per_gb)
-  → Create Payment (status: pending, plan_id, amount, bank_card_id)
-  → PAYMENT_PENDING
+callback_data: notif_silence:<account_id>
+text: 🔇 سکوت ۳ روز
 ```
 
-## Seller Account Creation Flow
+## Multiple Accounts
+
+A user may have multiple active accounts. Each account is evaluated independently. If two accounts both trigger notifications, the user receives two separate messages — one per account. Silence is per-account.
+
+## Multiple Rules on Same Account
+
+If an account triggers both `low_data` and `low_time` in the same scheduler run, the user receives **one combined message** (not two). Rules are merged into a single notification:
 
 ```
-Pick plan → Marzban addUser (s_XXXXXX, 30d, plan data_limit)
-  → Save Account (payment_status: unpaid)
-  → Prompt note (optional)
-  → Send subscription link + config links
+⚠️ هشدار اکانت {display_name}
+
+حجم باقی‌مانده: {remaining_gb} گیگابایت
+زمان باقی‌مانده: {days} روز
+
+حجم مصرف‌شده: {used_gb} از {total_gb} گیگابایت
+تاریخ انقضا: {expire_date}
+
+[ 🔇 سکوت ۳ روز ]
 ```
 
-## Admin Settlement Flow
+If only `speed_predict` fires (no other rule), it's sent standalone. If `speed_predict` fires alongside `low_data` or `low_time`, use the combined format (since the prediction is redundant when the user can already see the actual remaining values).
 
-```
-Filter (all/unpaid/paid) → checkbox select → batch mark as paid
-Or: "تسویه همه" → mark ALL unpaid as paid
-```
+## Data Display Format
+
+- **GB values:** Rounded to 1 decimal place. `2.3 گیگابایت`, `0.8 گیگابایت`
+- **Days + hours:** `۳ روز و ۵ ساعت`. If less than 1 day: `۱۲ ساعت`. If less than 1 hour: `کمتر از ۱ ساعت`.
+- **Dates:** Jalali (Shamsi) calendar: `۱۴۰۵/۰۲/۰۹` — consistent with the rest of the bot's date display.
+- **Persian numerals:** Use Persian digits (۰۱۲۳۴۵۶۷۸۹) for all numbers in notification text.
 
 ## Session Data
 
-```typescript
-// user info
-userId?: number
+No session data needed. Notifications are fire-and-forget from the scheduler. The silence callback handler reads `account_id` from callback data and `user.chat_id` from `ctx.from.id` — no session state required.
 
-// payment flow
-selectedPlanId?: number
-selectedGb?: number          // for per_gb flow
-pendingPaymentId?: number
+## Handler Registration
 
-// seller flows
-sellerId?: number
-selectedSellerPlanId?: number
-awaitingQuantity?: boolean
-awaitingAccountName?: boolean
-pendingDataLimit?: number
-pendingPrice?: number
-pendingPlanName?: string
+The silence callback handler is registered in `src/bot/handlers/` alongside existing handlers:
 
-// admin seller management
-managingSellerId?: number
-sellerEditField?: 'note' | 'link_prefix'
-managingSellerPlanId?: number
-accountFilter?: 'all' | 'unpaid' | 'paid'
-selectedAccountIds?: number[]
-currentPage?: number
-searchQuery?: string
-
-// admin bank card management
-adminCardStep?: 'number' | 'holder' | 'bank'
-pendingCardNumber?: string
-pendingCardHolder?: string
-
-// admin plan group management
-managingGroupId?: number
+```
+src/bot/handlers/
+  ├── adminPayment.ts
+  ├── adminUserApproval.ts
+  ├── notificationSilence.ts    ← new
+  └── index.ts                  ← re-export
 ```
 
-## Setting System
-
+Registered in `bot.ts` after other handlers:
 ```typescript
-import { getSetting } from '@/bot/services/settingService'
-const buyEnabled = await getSetting('buy_enabled')  // "true" | "false"
+registerNotificationSilenceHandler(bot)
 ```
 
-- DB-backed (`bot_settings` table), 30s cache TTL
-- `initSettingService(db)` at startup
+## Scheduler Logging
 
-## UI Rules
-- **Single-message UI:** Only ONE message per scene. Always `editMessageText`, never send new.
-- **Exceptions:** Config/subscription links sent as separate copyable messages.
-- **Language:** Persian (فارسی)
-- **Copyable text:** Wrap in ``` for code blocks (card numbers, links, etc.)
+Each scheduler run logs a one-line summary:
+```
+notification: checked 42 accounts, sent 5 notifications, skipped 12 (silenced), skipped 25 (no trigger)
+```
+
+No per-account logging unless an error occurs (Marzban API failure, Telegram send failure).
