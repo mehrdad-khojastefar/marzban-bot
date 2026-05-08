@@ -1,7 +1,8 @@
 import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
-import { SCENE_MANAGE_ACCOUNTS, SCENE_HOME, SCENE_VIEW_ACCOUNT } from './constants';
+import { SCENE_MANAGE_ACCOUNTS, SCENE_HOME, SCENE_VIEW_ACCOUNT, SCENE_RENEW_ACCOUNT } from './constants';
 import { getMessage } from '../services/messageService';
+import { getSetting } from '../services/settingService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
@@ -28,6 +29,7 @@ manageAccountsScene.enter(async (ctx) => {
   }
 
   const marzban = getMarzban();
+  const renewEnabled = (await getSetting('renew_enabled')) === 'true';
   const lines: string[] = [];
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
@@ -42,11 +44,15 @@ manageAccountsScene.enter(async (ctx) => {
       const daysLeft = formatDaysLeft(account.expires_at);
 
       lines.push(`🔹 ${label}\n   📊 ${used}/${limit} | ⏰ ${daysLeft} باقی‌مانده`);
-      buttons.push([Markup.button.callback(label, `view_account_${account.id}`)]);
     } catch {
       lines.push(`🔹 ${label}\n   ⚠️ خطا در دریافت اطلاعات`);
-      buttons.push([Markup.button.callback(label, `view_account_${account.id}`)]);
     }
+
+    const row = [Markup.button.callback(label, `view_account_${account.id}`)];
+    if (renewEnabled && account.type === 'paid') {
+      row.push(Markup.button.callback('🔄 تمدید', `renew_account_${account.id}`));
+    }
+    buttons.push(row);
   }
 
   buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
@@ -59,6 +65,17 @@ manageAccountsScene.action(/^view_account_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   ctx.session.selectedAccountId = parseInt(ctx.match[1]);
   await ctx.scene.enter(SCENE_VIEW_ACCOUNT);
+});
+
+manageAccountsScene.action(/^renew_account_(\d+)$/, async (ctx) => {
+  if ((await getSetting('renew_enabled')) !== 'true') {
+    const disabledMsg = await getMessage('renew.disabled');
+    await ctx.answerCbQuery(disabledMsg, { show_alert: true });
+    return;
+  }
+  await ctx.answerCbQuery();
+  ctx.session.renewAccountId = parseInt(ctx.match[1]);
+  await ctx.scene.enter(SCENE_RENEW_ACCOUNT);
 });
 
 manageAccountsScene.action('back', async (ctx) => {

@@ -1,8 +1,7 @@
 import { Scenes, Markup } from 'telegraf';
 import { BotContext } from '../context';
-import { SCENE_VIEW_ACCOUNT, SCENE_MANAGE_ACCOUNTS, SCENE_RENEW_ACCOUNT } from './constants';
+import { SCENE_VIEW_ACCOUNT, SCENE_MANAGE_ACCOUNTS } from './constants';
 import { getMessage } from '../services/messageService';
-import { getSetting } from '../services/settingService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
@@ -106,35 +105,10 @@ viewAccountScene.enter(async (ctx) => {
 
   const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
 
-  // Renew button: only for paid accounts when renew_enabled
-  if (account.type === 'paid') {
-    const renewEnabled = await getSetting('renew_enabled');
-    if (renewEnabled === 'true') {
-      buttons.push([Markup.button.callback('🔄 تمدید اکانت', 'renew_account')]);
-    }
-  }
-
   buttons.push([Markup.button.callback('✏️ تغییر نام', 'rename_account')]);
   buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
 
   await sendOrEdit(ctx, text, Markup.inlineKeyboard(buttons));
-});
-
-viewAccountScene.action('renew_account', async (ctx) => {
-  const renewEnabled = await getSetting('renew_enabled');
-  if (renewEnabled !== 'true') {
-    const disabledMsg = await getMessage('renew.disabled');
-    await ctx.answerCbQuery(disabledMsg, { show_alert: true });
-    return;
-  }
-  await ctx.answerCbQuery();
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) {
-    await ctx.scene.enter(SCENE_MANAGE_ACCOUNTS);
-    return;
-  }
-  ctx.session.renewAccountId = accountId;
-  await ctx.scene.enter(SCENE_RENEW_ACCOUNT);
 });
 
 viewAccountScene.action('rename_account', async (ctx) => {
