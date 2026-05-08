@@ -1,183 +1,87 @@
-# User Self-Registration & Plan Groups
+# User Renew Feature
 
-## Status
-- [x] Buy scene — plan selection, payment creation
-- [x] Payment pending scene — receipt upload, admin notification
-- [x] Admin payment handler — approve/reject with account provisioning
-- [x] buy_enabled gate in home scene
-- [ ] **PlanGroup model** — deep link codes, per_gb vs fixed types
-- [ ] **Self-registration flow** — users register via deep link, no admin gate
-- [ ] **Random card assignment** — assign random active card at registration
-- [ ] **Financial tracking on Payment** — store bank_card_id per payment
-- [ ] **Per-GB buy flow** — user picks GB count, price calculated
-- [ ] **Fixed buy flow** — user picks from pre-defined plans
-- [ ] **Admin plan group management** — CRUD for plan groups + plans
-- [ ] **Bank card management** — CRUD for cards (existing task)
-- [ ] **Seed data** — create initial plan groups with correct pricing
+## Goal
+Allow existing users to renew (extend) their VPN accounts. Renew is independent from buy — old users can renew even when new sales are disabled.
 
-## What Changed (from previous design)
+## Feature Flag
+- New BotSetting: `renew_enabled` (`"true"` / `"false"`, default `"false"`)
+- Completely separate from `buy_enabled`
+- When `"false"` → "تمدید اکانت" button shows toast, no scene transition
 
-### Old: Admin-gated access
-- Admin manually adds users by chat ID
-- Admin assigns a bank card to each user
+## Renew Logic (Fair Accumulation)
+When a user renews an account with a plan:
 
-### New: Self-registration via deep link
-- Users open `t.me/doveng_bot?start=<8-hex-code>`
-- Bot auto-registers user, assigns random bank card
-- Deep link code maps to a PlanGroup (determines pricing)
-- No admin approval needed to use the bot
+1. **Data limit:** `new_data_limit = current_marzban_data_limit + plan.data_limit`
+   - Fetched live from Marzban (not DB) to respect any admin edits
+   - Added cumulatively — unused data is preserved
+   
+2. **Expiry:** `new_expire = max(current_expire, now) + plan.duration_days`
+   - If account is still active → extend from current expiry
+   - If account is expired → extend from now
+   - Never lose remaining time
 
-## What Needs to Change
+3. **Account status:** If expired/limited/disabled → reactivated to `active`
 
-### 1. Database — Add PlanGroup model
+4. **Data usage:** NOT reset — user keeps their usage history
 
-```prisma
-enum PlanGroupType {
-  per_gb
-  fixed
-}
+## Entry Point
+- New "تمدید اکانت" button in VIEW_ACCOUNT scene (next to rename button)
+- Only shown when `renew_enabled = "true"`
+- Only shown for accounts the user owns (type = 'paid')
 
-model PlanGroup {
-  id            Int           @id @default(autoincrement())
-  code          String        @unique   // 8 hex chars from UUIDv4 first segment
-  name          String                  // admin label, e.g. "Per-GB Plan", "Fixed Packages"
-  type          PlanGroupType
-  price_per_gb  Int?                    // only for per_gb type (Toman)
-  duration_days Int           @default(30)
-  is_active     Boolean       @default(true)
-  created_at    DateTime      @default(now())
-  users         User[]
-  plans         Plan[]
+## Scene: RENEW_ACCOUNT
 
-  @@map("plan_groups")
-}
-```
+### Step 1: Show Plans
+Same plan selection as BUY_ACCOUNT — reads user's PlanGroup:
+- **Per-GB group:** GB picker (1, 2, 3, 5, 10, 20, 50, 100)
+- **Fixed group:** Plan list with name, data_limit, duration, price
 
-Update Plan model — add `group_id`:
-```prisma
-model Plan {
-  // ... existing fields ...
-  group_id   Int
-  group      PlanGroup @relation(fields: [group_id], references: [id])
-}
-```
+### Step 2: Payment
+Same payment flow as BUY_ACCOUNT:
+- Check `payment_method` setting (manual / premzy)
+- **Manual:** Pick random card from user's assigned cards → show payment instructions → PAYMENT_PENDING
+- **Premzy:** Build checkout URL → show payment link
 
-Update User model — add `plan_group_id`:
-```prisma
-model User {
-  // ... existing fields ...
-  plan_group_id  Int?
-  plan_group     PlanGroup? @relation(fields: [plan_group_id], references: [id])
-}
-```
+### Step 3: Approval & Renewal
+On admin approval (or Premzy callback):
+1. Fetch current Marzban user data (`marzban.getUser`)
+2. Calculate new data_limit and expire (see logic above)
+3. Call `marzban.modifyUser(username, { data_limit, expire, status: 'active' })`
+4. Update Account record in DB (new `expires_at`, optionally `plan_id`)
+5. Mark Transaction as `completed`, link to existing account
+6. Notify user with updated account details
 
-Update Payment model — add `bank_card_id` + make `plan_id` nullable:
-```prisma
-model Payment {
-  // ... existing fields ...
-  plan_id         Int?              // nullable for per_gb (no Plan record)
-  bank_card_id    Int?              // which card was shown — financial tracking
-  data_limit      BigInt?           // for per_gb: stores the GB count chosen
-  bank_card       BankCard? @relation(fields: [bank_card_id], references: [id])
-}
-```
+## Transaction Model
+Reuse existing Transaction model with a new `type` field:
+- Add `type` enum: `buy` | `renew` to Transaction
+- Renew transactions store `account_id` from the start (the account being renewed)
+- Buy transactions get `account_id` after provisioning (existing behavior)
 
-Add payments relation to BankCard:
-```prisma
-model BankCard {
-  // ... existing fields ...
-  payments    Payment[]
-}
-```
-
-### 2. Start Scene — Self-Registration
-
-Replace admin-gate with self-registration:
-
-```
-/start <code>
-  → Look up PlanGroup by code
-  → If no code and user not registered → show "use correct link" error
-  → If invalid code → show error
-  → If user exists → update profile, go HOME
-  → If new user:
-      - Create User with plan_group_id, random bank_card_id
-      - Seller check (existing logic)
-      - Go HOME
-```
-
-Code generation: `crypto.randomUUID().split('-')[0]` → e.g. `f47ac10b`
-
-### 3. Buy Scene — Two Flows Based on PlanGroup Type
-
-**Per-GB flow:**
-1. Show message: "هر گیگ = {price_per_gb} تومان"
-2. Show GB selection buttons (e.g. 1, 2, 3, 5, 10, 20, 50, 100)
-3. User picks GB → calculate price = GB × price_per_gb
-4. Show payment instructions with card
-5. Create Payment with `data_limit = GB in bytes`, `amount = calculated price`, `bank_card_id`, `plan_id = null`
-
-**Fixed flow:**
-1. Fetch plans from user's PlanGroup
-2. Show plan list as buttons (existing behavior)
-3. User picks plan → show payment instructions with card
-4. Create Payment with `plan_id`, `bank_card_id`, `amount = plan.price`
-
-### 4. Payment — Financial Tracking
-
-Every Payment now stores `bank_card_id` — the card that was shown to the user. This enables:
-- Revenue per card: `SUM(amount) WHERE bank_card_id = X AND status = approved`
-- User payment history with card info
-- Card-level financial reports
-
-### 5. Bank Card — Random Assignment
-
-At registration:
+## Session Data (new fields)
 ```typescript
-const activeCards = await db.bankCard.findMany({ where: { is_active: true } });
-const randomCard = activeCards[Math.floor(Math.random() * activeCards.length)];
-// randomCard may be undefined if no active cards
+renewAccountId?: number    // the account being renewed
 ```
 
-User gets `bank_card_id = randomCard?.id ?? null`.
+## DB Changes
+1. Add `TransactionType` enum (`buy`, `renew`) to Prisma schema
+2. Add `type` field to Transaction model (default: `buy`)
+3. Add `renew_enabled` to BotSetting seeds
+4. Add renew-related bot_messages
 
-### 6. Remove Admin User Management Scene
+## New Bot Messages
+| Key | Default (Persian) |
+|---|---|
+| `renew.select_plan` | پلن تمدید را انتخاب کنید: |
+| `renew.select_gb` | حجم تمدید را انتخاب کنید: |
+| `renew.disabled` | تمدید اکانت فعلاً غیرفعال است. |
+| `renew.success` | ✅ اکانت شما با موفقیت تمدید شد! |
+| `renew.payment_instructions` | لطفاً مبلغ تمدید را واریز کنید: |
 
-The ADMIN_USERS scene for manually adding users is no longer needed. Users self-register.
-
-Admin still needs:
-- ADMIN_BANK_CARDS — manage cards
-- A new scene or extension for managing PlanGroups
-
-## Files to Modify
-- `prisma/schema.prisma` — add PlanGroup, update Plan/User/Payment/BankCard
-- `src/bot/scenes/start.ts` — self-registration with deep link
-- `src/bot/scenes/buyAccount.ts` — two flows (per_gb vs fixed), bank_card_id on Payment
-- `src/bot/scenes/home.ts` — remove admin users button (or repurpose)
-- `src/bot/context.ts` — session fields for GB selection
-- `src/db/seeds/seed.ts` — seed plan groups + plans
-
-## Files to Create
-- `prisma/migrations/XXXX_add_plan_groups/` — migration
-- `design/bot/scenes/buy_account.md` — update scene spec
-
-## Migration Plan
-1. Add PlanGroup table
-2. Add plan_group_id to User (nullable for existing users)
-3. Add group_id to Plan
-4. Add bank_card_id + data_limit to Payment, make plan_id nullable
-5. Seed two plan groups with correct pricing
-6. Seed plans for fixed group
-
-## Concrete Plan Data
-- **Per-GB group**: price_per_gb = 300, duration_days = 30
-- **Fixed group**: 
-  - Plan: 5GB (5,368,709,120 bytes), 600 Toman, 30 days
-  - Plan: 10GB (10,737,418,240 bytes), 1,100 Toman, 30 days
-
-## Notes
-- Deep link code = first 8 chars of UUIDv4 (hex), auto-generated
-- Card number display: dashes for readability (`6037-XXXX-XXXX-XXXX`)
-- Card number stored without dashes in DB
-- Manual payment approval flow unchanged
-- Seller flow unchanged
+## Implementation Order
+1. Schema: Add `TransactionType` enum + `type` field to Transaction
+2. Seeds: Add `renew_enabled` setting + renew messages
+3. Core: Create `renewAccount()` function in `src/core/provision.ts`
+4. Scene: Create RENEW_ACCOUNT scene
+5. Integration: Add "تمدید اکانت" button to VIEW_ACCOUNT
+6. Integration: Wire up admin approval handler to detect renew transactions
+7. Tests

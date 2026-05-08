@@ -59,6 +59,11 @@ enum PaymentMethod {
   manual
 }
 
+enum TransactionType {
+  buy
+  renew
+}
+
 model PlanGroup {
   id            Int           @id @default(autoincrement())
   code          String        @unique @db.VarChar(8)
@@ -147,7 +152,7 @@ model Account {
   plan              Plan?                 @relation(fields: [plan_id], references: [id])
   seller            Seller?               @relation(fields: [seller_id], references: [id])
   seller_plan       SellerPlan?           @relation(fields: [seller_plan_id], references: [id])
-  transaction       Transaction?
+  transactions      Transaction[]
 
   @@map("accounts")
 }
@@ -179,13 +184,14 @@ model Transaction {
   data_limit        BigInt?
   duration_days     Int
   amount            Int
+  type              TransactionType   @default(buy)
   status            TransactionStatus @default(pending)
   method            PaymentMethod
   premzy_order_id   String?           @unique
   bank_card_id      Int?
   receipt_file_id   String?
   reviewed_by       BigInt?
-  account_id        Int?              @unique
+  account_id        Int?
   error_message     String?
   created_at        DateTime          @default(now())
   updated_at        DateTime          @updatedAt

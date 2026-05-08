@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
-import { provisionAccount, buildFullAccountNotification } from '../../core/provision';
+import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../../core/provision';
 import { formatBytes } from '../../core/utils/format';
 import { getMessage } from '../services/messageService';
 
@@ -47,47 +47,93 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
       data: { status: 'provisioning', reviewed_by: BigInt(ctx.from!.id) },
     });
 
-    // Provision the account
-    let result;
-    try {
-      result = await provisionAccount(db, {
-        transactionId: txnId,
-        userId: txn.user_id,
-        planId: txn.plan_id,
-        dataLimit,
-        durationDays,
-        amount: txn.amount,
-      });
-    } catch (err) {
-      console.error('Account provisioning failed:', err);
-      await db.transaction.update({
-        where: { id: txnId },
-        data: {
-          status: 'failed',
-          error_message: err instanceof Error ? err.message : String(err),
-        },
-      });
-      await ctx.editMessageCaption(
-        '❌ خطا در ساخت اکانت مرزبان. لطفاً دوباره تلاش کنید.',
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
-            Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
-          ],
-        ]),
-      );
-      return;
-    }
+    // Route based on transaction type
+    if (txn.type === 'renew') {
+      // ── Renew flow ──
+      if (!txn.account_id) {
+        await ctx.editMessageCaption('❌ خطا: اکانت مرتبط با تمدید یافت نشد.');
+        return;
+      }
 
-    // Notify user
-    try {
-      const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
-      await ctx.telegram.sendMessage(txn.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
-    } catch (notifyErr) {
-      console.error(`Failed to notify user ${txn.user.chat_id}:`, notifyErr);
-    }
+      let renewResult;
+      try {
+        renewResult = await renewAccount(db, {
+          transactionId: txnId,
+          accountId: txn.account_id,
+          dataLimitToAdd: dataLimit,
+          durationDays,
+        });
+      } catch (err) {
+        console.error('Account renewal failed:', err);
+        await db.transaction.update({
+          where: { id: txnId },
+          data: {
+            status: 'failed',
+            error_message: err instanceof Error ? err.message : String(err),
+          },
+        });
+        await ctx.editMessageCaption(
+          '❌ خطا در تمدید اکانت مرزبان. لطفاً دوباره تلاش کنید.',
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
+              Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
+            ],
+          ]),
+        );
+        return;
+      }
 
-    await ctx.editMessageCaption(`✅ تأیید شد - اکانت ${result.marzbanUsername} ساخته شد.`);
+      try {
+        const msg = buildRenewNotification(renewResult);
+        await ctx.telegram.sendMessage(txn.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+      } catch (notifyErr) {
+        console.error(`Failed to notify user ${txn.user.chat_id}:`, notifyErr);
+      }
+
+      await ctx.editMessageCaption(`✅ تأیید شد - اکانت ${renewResult.marzbanUsername} تمدید شد.`);
+    } else {
+      // ── Buy flow (existing) ──
+      let result;
+      try {
+        result = await provisionAccount(db, {
+          transactionId: txnId,
+          userId: txn.user_id,
+          planId: txn.plan_id,
+          dataLimit,
+          durationDays,
+          amount: txn.amount,
+        });
+      } catch (err) {
+        console.error('Account provisioning failed:', err);
+        await db.transaction.update({
+          where: { id: txnId },
+          data: {
+            status: 'failed',
+            error_message: err instanceof Error ? err.message : String(err),
+          },
+        });
+        await ctx.editMessageCaption(
+          '❌ خطا در ساخت اکانت مرزبان. لطفاً دوباره تلاش کنید.',
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
+              Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
+            ],
+          ]),
+        );
+        return;
+      }
+
+      try {
+        const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
+        await ctx.telegram.sendMessage(txn.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+      } catch (notifyErr) {
+        console.error(`Failed to notify user ${txn.user.chat_id}:`, notifyErr);
+      }
+
+      await ctx.editMessageCaption(`✅ تأیید شد - اکانت ${result.marzbanUsername} ساخته شد.`);
+    }
   });
 
   // ── Reject (Transaction-based) ──────────────────────────────────

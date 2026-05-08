@@ -5,7 +5,11 @@
       "Bash(npx prisma *)",
       "Bash(DATABASE_URL=\"postgresql://marzban_bot:marzban_bot@localhost:5432/marzban_bot\" npx prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script)",
       "Bash(npx eslint *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(yarn lint *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(gh pr *)"
     ]
   }
 }

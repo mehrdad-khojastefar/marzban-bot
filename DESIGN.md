@@ -1,63 +1,12 @@
 # Design
 
-## Scene Map
+## New Scenes
 
-```
-/start <code>
-  ├── No code + not registered → "لینک نامعتبر" error (dead end)
-  ├── Invalid code             → "لینک نامعتبر" error (dead end)
-  ├── New user + valid code    → register (random card, plan group) → HOME
-  └── Existing user            → update profile → HOME
-        ├── مدیریت اکانت‌ها           → MANAGE_ACCOUNTS → VIEW_ACCOUNT
-        ├── اکانت تستی                → TEST_ACCOUNT
-        ├── خرید اکانت                → BUY_ACCOUNT → PAYMENT_PENDING
-        │     ├── per_gb group → pick GB → payment
-        │     └── fixed group  → pick plan → payment
-        ├── پشتیبانی                  → SUPPORT
-        │
-        ── seller-only ──
-        ├── 🏪 پنل فروشنده            → SELLER_PANEL
-        │     ├── ساخت اکانت          → SELLER_CREATE_ACCOUNT
-        │     ├── اکانت‌ها             → SELLER_ACCOUNTS → SELLER_VIEW_ACCOUNT
-        │     └── گزارش مالی           → SELLER_REPORT
-        │
-        ── admin-only ──
-        ├── ⚙️ مدیریت فروشندگان       → ADMIN_SELLERS → ADMIN_SELLER_DETAIL
-        │     ├── پلن‌ها               → ADMIN_SELLER_PLANS
-        │     └── تسویه               → ADMIN_SELLER_ACCOUNTS
-        ├── 💳 مدیریت کارت‌ها          → ADMIN_BANK_CARDS
-        ├── 👤 مدیریت کاربران         → ADMIN_USERS
-        ├── 📦 مدیریت پلن‌گروپ‌ها       → ADMIN_PLAN_GROUPS
-        └── 📋 مدیریت اکانت‌ها         → ADMIN_ACCOUNTS → ADMIN_VIEW_ACCOUNT
-```
+| Scene | Purpose |
+|---|---|
+| RENEW_ACCOUNT | Plan selection for renewing an existing account |
 
-## Modified Scenes
-
-### START
-- Parse deep link parameter: `/start <code>`
-- **New user + valid code:** create User with `plan_group_id` + random `bank_card_id` → HOME
-- **New user + no/invalid code:** show error message, stop
-- **Existing user:** update first_name/last_name/username → HOME (ignore code)
-- Seller check still applies (link seller on first start)
-
-### HOME
-- "خرید اکانت" gated by `buy_enabled` setting (toast if disabled)
-- "🏪 پنل فروشنده" only for active sellers
-- Admin buttons only for `ADMIN_CHAT_ID`:
-  - "⚙️ مدیریت فروشندگان"
-  - "💳 مدیریت کارت‌ها"
-  - "👤 مدیریت کاربران"
-  - "📦 مدیریت پلن‌گروپ‌ها" (new)
-
-### BUY_ACCOUNT
-- Fetches user's PlanGroup to determine flow type
-- **Per-GB flow:** show GB picker → calculate price → payment
-- **Fixed flow:** show plan list → payment (existing behavior)
-- Fetches user's assigned bank card for payment instructions
-- If no card assigned → show error, block purchase
-- Payment record stores `bank_card_id` for financial tracking
-
-## New/Updated Scenes
+### Existing Scenes (for reference)
 
 | Scene | Purpose |
 |---|---|
@@ -65,130 +14,80 @@
 | ADMIN_USERS | User management: list users, view details, reassign card |
 | ADMIN_PLAN_GROUPS | Plan group management: list, create (auto-generates code), edit plans |
 
-## Self-Registration Flow
+
+## Renew Flow — Per-GB Group
 
 ```
-User taps deep link: t.me/doveng_bot?start=f47ac10b
-  → Bot parses code from /start payload
-  → Look up PlanGroup where code = "f47ac10b" AND is_active = true
-  → If not found → send error message, stop
-  → If user already exists by chat_id → update profile → HOME
-  → Pick random active BankCard
-  → Create User:
-      chat_id, first_name, last_name, username,
-      plan_group_id, bank_card_id (nullable if no cards)
-  → Seller check → HOME
-```
-
-## Buy Flow — Per-GB Group
-
-```
-User taps "خرید اکانت"
-  → Check buy_enabled → if false, toast
+User in VIEW_ACCOUNT taps "🔄 تمدید اکانت"
+  → Check renew_enabled → if false, toast
+  → Set session.renewAccountId = account.id
+  → Enter RENEW_ACCOUNT scene
   → Fetch user.plan_group (type = per_gb)
-  → Show GB picker:
-      "هر گیگابایت {price_per_gb} تومان
-       حجم مورد نظر را انتخاب کنید:"
+  → Show current account summary:
+      📛 نام: {account_name}
+      📊 مصرف: {used} / {limit}
+      ⏰ انقضا: {days_left}
+  → Show GB picker (same options as buy):
+      "حجم تمدید را انتخاب کنید:
+       هر گیگابایت {price_per_gb} تومان"
       [ 1 گیگ ] [ 2 گیگ ] [ 3 گیگ ]
       [ 5 گیگ ] [ 10 گیگ ] [ 20 گیگ ]
       [ 50 گیگ ] [ 100 گیگ ]
       [ 🔙 بازگشت ]
   → User picks GB
-  → Fetch user.bank_card → if null, show error
-  → Show payment instructions:
-      مبلغ: {gb × price_per_gb} تومان
-      شماره کارت:
-      `6037-XXXX-XXXX-XXXX`
-      به نام: {holder_name}
-      پس از واریز، رسید خود را ارسال کنید.
-  → Create Payment (status: pending, amount, data_limit, bank_card_id, plan_id = null)
+  → Pick random active card from user's cards → if null, show error
+  → Show payment instructions (same as buy)
+  → Create Transaction (type: renew, account_id, status: awaiting_receipt, amount, data_limit, bank_card_id)
   → PAYMENT_PENDING
 ```
 
-## Buy Flow — Fixed Group
+## Renew Flow — Fixed Group
 
 ```
-User taps "خرید اکانت"
-  → Check buy_enabled → if false, toast
+User in VIEW_ACCOUNT taps "🔄 تمدید اکانت"
+  → Check renew_enabled → if false, toast
+  → Set session.renewAccountId = account.id
+  → Enter RENEW_ACCOUNT scene
   → Fetch user.plan_group (type = fixed) + plans
+  → Show current account summary (same as per_gb)
   → Show plan list:
-      "پلن مورد نظر خود را انتخاب کنید:"
+      "پلن تمدید را انتخاب کنید:"
       [ 🔹 5 گیگ - 30 روزه - 600 تومان ]
       [ 🔹 10 گیگ - 30 روزه - 1,100 تومان ]
       [ 🔙 بازگشت ]
   → User picks plan
-  → Fetch user.bank_card → if null, show error
-  → Show payment instructions (same format as per_gb)
-  → Create Payment (status: pending, plan_id, amount, bank_card_id)
+  → Pick random active card → if null, show error
+  → Show payment instructions
+  → Create Transaction (type: renew, account_id, plan_id, amount, bank_card_id)
   → PAYMENT_PENDING
 ```
 
-## Seller Account Creation Flow
+## Renew Approval & Execution
 
 ```
-Pick plan → Marzban addUser (s_XXXXXX, 30d, plan data_limit)
-  → Save Account (payment_status: unpaid)
-  → Prompt note (optional)
-  → Send subscription link + config links
+Admin approves transaction (or Premzy callback fires)
+  → Check transaction.type
+  → If "buy": provisionAccount() (existing behavior — create new Marzban user)
+  → If "renew": renewAccount()
+      1. Fetch account from transaction.account_id
+      2. marzban.getUser(account.marzban_username)
+         → current_data_limit, current_expire
+      3. Calculate:
+         new_data_limit = current_data_limit + transaction.data_limit
+         base_expire = max(current_expire, now_timestamp)
+         new_expire = base_expire + (transaction.duration_days × 86400)
+      4. marzban.modifyUser(username, {
+           data_limit: new_data_limit,
+           expire: new_expire,
+           status: 'active'      ← reactivates if expired/limited
+         })
+      5. Update Account in DB:
+         expires_at = new Date(new_expire × 1000)
+      6. Mark Transaction as completed
+      7. Notify user:
+         ✅ اکانت شما تمدید شد!
+         📛 نام: {name}
+         📦 حجم جدید: {new_data_limit}
+         ⏰ انقضای جدید: {new_expire_date}
 ```
 
-## Admin Settlement Flow
-
-```
-Filter (all/unpaid/paid) → checkbox select → batch mark as paid
-Or: "تسویه همه" → mark ALL unpaid as paid
-```
-
-## Session Data
-
-```typescript
-// user info
-userId?: number
-
-// payment flow
-selectedPlanId?: number
-selectedGb?: number          // for per_gb flow
-pendingPaymentId?: number
-
-// seller flows
-sellerId?: number
-selectedSellerPlanId?: number
-awaitingQuantity?: boolean
-awaitingAccountName?: boolean
-pendingDataLimit?: number
-pendingPrice?: number
-pendingPlanName?: string
-
-// admin seller management
-managingSellerId?: number
-sellerEditField?: 'note' | 'link_prefix'
-managingSellerPlanId?: number
-accountFilter?: 'all' | 'unpaid' | 'paid'
-selectedAccountIds?: number[]
-currentPage?: number
-searchQuery?: string
-
-// admin bank card management
-adminCardStep?: 'number' | 'holder' | 'bank'
-pendingCardNumber?: string
-pendingCardHolder?: string
-
-// admin plan group management
-managingGroupId?: number
-```
-
-## Setting System
-
-```typescript
-import { getSetting } from '@/bot/services/settingService'
-const buyEnabled = await getSetting('buy_enabled')  // "true" | "false"
-```
-
-- DB-backed (`bot_settings` table), 30s cache TTL
-- `initSettingService(db)` at startup
-
-## UI Rules
-- **Single-message UI:** Only ONE message per scene. Always `editMessageText`, never send new.
-- **Exceptions:** Config/subscription links sent as separate copyable messages.
-- **Language:** Persian (فارسی)
-- **Copyable text:** Wrap in ``` for code blocks (card numbers, links, etc.)

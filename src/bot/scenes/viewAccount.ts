@@ -103,10 +103,10 @@ viewAccountScene.enter(async (ctx) => {
     }
   }
 
-  const buttons: ReturnType<typeof Markup.button.callback>[][] = [
-    [Markup.button.callback('✏️ تغییر نام', 'rename_account')],
-    [Markup.button.callback('🔙 بازگشت', 'back')],
-  ];
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
+
+  buttons.push([Markup.button.callback('✏️ تغییر نام', 'rename_account')]);
+  buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
 
   await sendOrEdit(ctx, text, Markup.inlineKeyboard(buttons));
 });
