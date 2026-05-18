@@ -1,8 +1,7 @@
 import http from 'node:http';
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { Telegraf } from 'telegraf';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { createPrismaClient } from '../core/db';
 import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../core/provision';
 import { formatBytes } from '../core/utils/format';
 
@@ -15,8 +14,7 @@ interface PremzyServerConfig {
 }
 
 export async function startPremzyServer(config: PremzyServerConfig): Promise<http.Server> {
-  const adapter = new PrismaPg({ connectionString: config.databaseUrl });
-  const db = new PrismaClient({ adapter });
+  const db = createPrismaClient({ databaseUrl: config.databaseUrl, source: 'premzy' });
 
   const telegrafOptions: Partial<Telegraf.Options<any>> = {};
   if (config.socksProxy) {

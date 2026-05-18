@@ -1,6 +1,5 @@
 import http from 'node:http';
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { createPrismaClient } from '../core/db';
 import { renameConfigLinks } from '../core/utils/format';
 
 interface SubServerConfig {
@@ -11,8 +10,7 @@ interface SubServerConfig {
 }
 
 export async function startSubServer(config: SubServerConfig): Promise<http.Server> {
-  const adapter = new PrismaPg({ connectionString: config.databaseUrl });
-  const db = new PrismaClient({ adapter });
+  const db = createPrismaClient({ databaseUrl: config.databaseUrl, source: 'sub' });
 
   const server = http.createServer(async (req, res) => {
     // Only handle GET /sub/*

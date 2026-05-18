@@ -1,31 +1,29 @@
-# Commit Recap
+# RECAP — Step 2: Prisma pool sizing + slow-query logging
 
 ## What changed
-Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
+- `src/core/db/client.ts`: new `createPrismaClient(options)` factory that configures:
+  - `pg` pool: `max` (default 25) and `idleTimeoutMillis` (default 30 s), passed through `PrismaPg`.
+  - Prisma event logging: `query`, `warn`, `error` emitted as events; queries ≥ `DB_SLOW_QUERY_MS` (default 100 ms) are logged with the SQL text and **parameter count only** (params never logged — PII risk).
+  - Tagged log prefix per process (`bot`, `sub`, `premzy`) so noisy operators can grep.
+- `initDb` / `getDb` keep their old signature (still accept a URL string) and delegate to the factory.
+- `src/sub/server.ts` and `src/premzy/server.ts` no longer construct `PrismaPg` + `PrismaClient` inline — they call `createPrismaClient` with a `source` tag.
+- `.env.example`: documented `DB_POOL_MAX`, `DB_POOL_IDLE_MS`, `DB_SLOW_QUERY_MS`.
+- `ARCHITECTURE.md`: added a "Database client factory" subsection under Performance & Scalability.
+- Tests: extended `src/core/db/__tests__/singleton.test.ts` to verify pool options flow through, env-var overrides work, log handlers register, and missing `DATABASE_URL` throws.
 
-## Key decisions
-- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
-- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
-- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
-- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
-- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
+## Why
+The Prisma + `@prisma/adapter-pg` setup previously had **no** explicit pool sizing — `pg.Pool` defaults to a max of 10. With three processes (bot + sub + premzy) under load that's a hard ceiling, and slow queries were silently absorbed without any way to know which ones to fix first. Centralising client construction means future tuning (statement timeouts, query event sampling, etc.) lands in one place.
 
-## Files changed
-```
-prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
-prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
+## Decisions
+- **Factory-first, singleton second.** `createPrismaClient` is the primitive; `initDb` is a singleton wrapper used only by the bot. Sub/Premzy don't need the singleton, so they don't pay for it.
+- **Per-process pool, not a shared one.** Each Node process has its own `pg.Pool`; we don't try to share connections across processes (would require PgBouncer). Operator sets `DB_POOL_MAX` per process if defaults don't fit.
+- **Never log query params.** Parameters can contain `chat_id`, names, or tokens. We log the SQL text + param count, full stop.
+- **Slow-query log goes through `console.warn` for now.** Step 10 (observability) swaps this for `pino` + Prometheus histograms. Keeping the surface small means Step 10 changes one place.
 
-src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
-src/bot/context.ts                             # Added renewAccountId to SessionData
-src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
-src/bot/scenes/index.ts                        # Registered renewAccountScene
-src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
-src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
-src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
-src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
-src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
+## Verification
+- `yarn test` — 110/110 pass (4 new tests for the factory).
+- `npx eslint src/core/db src/sub src/premzy` — no errors in touched files (2 pre-existing `any` warnings in `premzy/server.ts`).
+- Pre-existing main-branch lint/tsc failures unrelated to this PR.
 
-WORKING.md                                     # Updated with full renew feature spec
-ARCHITECTURE.md                                # Updated with renew architecture decisions
-DESIGN.md                                      # Updated with renew scene map + flows
-```
+## What's next
+Step 3 in `WORKING.md`: Marzban client hardening — keep-alive agents, proactive token refresh, per-call timeout, single retry on transient errors.
