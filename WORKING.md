@@ -1,87 +1,140 @@
-# User Renew Feature
+# Speed & Scalability — SQL, Database, and Code-Layer Improvements
 
 ## Goal
-Allow existing users to renew (extend) their VPN accounts. Renew is independent from buy — old users can renew even when new sales are disabled.
 
-## Feature Flag
-- New BotSetting: `renew_enabled` (`"true"` / `"false"`, default `"false"`)
-- Completely separate from `buy_enabled`
-- When `"false"` → "تمدید اکانت" button shows toast, no scene transition
+Make the bot blazingly fast and capable of serving **10,000 concurrent users / accounts** on a single small VPS without infrastructure overhaul.
 
-## Renew Logic (Fair Accumulation)
-When a user renews an account with a plan:
+## Success Criteria (SLOs)
 
-1. **Data limit:** `new_data_limit = current_marzban_data_limit + plan.data_limit`
-   - Fetched live from Marzban (not DB) to respect any admin edits
-   - Added cumulatively — unused data is preserved
-   
-2. **Expiry:** `new_expire = max(current_expire, now) + plan.duration_days`
-   - If account is still active → extend from current expiry
-   - If account is expired → extend from now
-   - Never lose remaining time
-
-3. **Account status:** If expired/limited/disabled → reactivated to `active`
-
-4. **Data usage:** NOT reset — user keeps their usage history
-
-## Entry Point
-- New "تمدید اکانت" button in VIEW_ACCOUNT scene (next to rename button)
-- Only shown when `renew_enabled = "true"`
-- Only shown for accounts the user owns (type = 'paid')
-
-## Scene: RENEW_ACCOUNT
-
-### Step 1: Show Plans
-Same plan selection as BUY_ACCOUNT — reads user's PlanGroup:
-- **Per-GB group:** GB picker (1, 2, 3, 5, 10, 20, 50, 100)
-- **Fixed group:** Plan list with name, data_limit, duration, price
-
-### Step 2: Payment
-Same payment flow as BUY_ACCOUNT:
-- Check `payment_method` setting (manual / premzy)
-- **Manual:** Pick random card from user's assigned cards → show payment instructions → PAYMENT_PENDING
-- **Premzy:** Build checkout URL → show payment link
-
-### Step 3: Approval & Renewal
-On admin approval (or Premzy callback):
-1. Fetch current Marzban user data (`marzban.getUser`)
-2. Calculate new data_limit and expire (see logic above)
-3. Call `marzban.modifyUser(username, { data_limit, expire, status: 'active' })`
-4. Update Account record in DB (new `expires_at`, optionally `plan_id`)
-5. Mark Transaction as `completed`, link to existing account
-6. Notify user with updated account details
-
-## Transaction Model
-Reuse existing Transaction model with a new `type` field:
-- Add `type` enum: `buy` | `renew` to Transaction
-- Renew transactions store `account_id` from the start (the account being renewed)
-- Buy transactions get `account_id` after provisioning (existing behavior)
-
-## Session Data (new fields)
-```typescript
-renewAccountId?: number    // the account being renewed
-```
-
-## DB Changes
-1. Add `TransactionType` enum (`buy`, `renew`) to Prisma schema
-2. Add `type` field to Transaction model (default: `buy`)
-3. Add `renew_enabled` to BotSetting seeds
-4. Add renew-related bot_messages
-
-## New Bot Messages
-| Key | Default (Persian) |
+| Metric | Target |
 |---|---|
-| `renew.select_plan` | پلن تمدید را انتخاب کنید: |
-| `renew.select_gb` | حجم تمدید را انتخاب کنید: |
-| `renew.disabled` | تمدید اکانت فعلاً غیرفعال است. |
-| `renew.success` | ✅ اکانت شما با موفقیت تمدید شد! |
-| `renew.payment_instructions` | لطفاً مبلغ تمدید را واریز کنید: |
+| p50 update → reply latency (cached path) | < 80 ms |
+| p95 update → reply latency | < 300 ms |
+| p99 update → reply latency | < 800 ms |
+| Marzban call p95 (cached token) | < 250 ms |
+| Subscription endpoint p95 | < 50 ms |
+| Sustained throughput | 200 updates/sec |
+| Memory (bot process) | < 512 MB steady-state |
+| Zero N+1 in any per-update code path | enforced by code review |
 
-## Implementation Order
-1. Schema: Add `TransactionType` enum + `type` field to Transaction
-2. Seeds: Add `renew_enabled` setting + renew messages
-3. Core: Create `renewAccount()` function in `src/core/provision.ts`
-4. Scene: Create RENEW_ACCOUNT scene
-5. Integration: Add "تمدید اکانت" button to VIEW_ACCOUNT
-6. Integration: Wire up admin approval handler to detect renew transactions
-7. Tests
+## Non-Goals
+
+- No multi-region / sharding.
+- No Redis dependency unless a P1 fix demands it (we'll attempt to stay in-process + Postgres).
+- No rewrite. Surgical, reversible diffs only.
+- No new features. UX behavior stays identical.
+
+## Out of Scope (already on TODO.md)
+
+- Admin panel.
+- CLI.
+- E2E tests.
+
+---
+
+## Findings Summary (from codebase audit)
+
+See `DESIGN.md → Performance & Scalability Design` for the full design rationale and target architecture. Highlights:
+
+### P0 — breaks at 10K
+1. **Missing Postgres indexes** on `Account.user_id`, `Account.seller_id`, `Account.marzban_username`, `Account.marzban_sub_token`, `Account.expires_at`, `User.status`, `Payment.user_id`, `Payment.status`, `Seller.user_id`, `Transaction.user_id`, `Transaction.account_id`. (`prisma/schema.prisma`)
+2. **No connection-pool sizing** on PrismaPg adapter (`src/core/db/client.ts`). Default 10 connections is a hard ceiling.
+3. **N+1 in `adminViewAccount.ts`** — 9 `db.account.findUnique` calls across one session. Cache in `ctx.session`.
+4. **`findMany` without aggregation** in `sellerReport.ts` — loads all rows to sum in JS. Use `db.account.aggregate`.
+5. **No transaction boundaries** around renew / buy flows (`renewAccount.ts`, `buyAccount.ts`) → inconsistent state on partial failure.
+6. **No Marzban username index** → subscription server full-scans on every request (`src/sub/server.ts`).
+
+### P1 — bad latency under load
+7. **Marzban Axios client** has no HTTP keep-alive agent → new TCP per call.
+8. **Sequential awaits** in buy/renew scene handlers that should be `Promise.all`.
+9. **`BotSetting` / `BotMessage` re-read per update** — wrap in proper LRU + pub-sub-style invalidation on writes (currently TTL only, stale up to 5 min).
+10. **`select` discipline** missing across hot reads — fetching all columns when 2 fields suffice.
+11. **Marzban token cache** has no proactive TTL refresh; relies on 401 → retry path.
+
+### P2 — polish / observability
+12. No slow-query logging, no request IDs, no Prisma query events.
+13. No metrics endpoint (cannot detect what breaks first).
+14. `BigInt` vs `Int` consistency on `chat_id` is fine (BigInt) but `data_limit` should stay BigInt (already is).
+15. Background reminders / expiry scans (if any) are not paginated.
+
+---
+
+## Work Plan
+
+Each step is independently shippable. Don't bundle. One PR per group.
+
+### Step 1 — Schema indexes (P0, low-risk, biggest win)
+- Add indexes in `prisma/schema.prisma`:
+  - `Account`: `@@index([user_id])`, `@@index([seller_id])`, `@@index([marzban_username])`, `@@index([marzban_sub_token])`, `@@index([expires_at])`, `@@index([seller_id, payment_status])`
+  - `User`: `@@index([status])`
+  - `Payment`: `@@index([user_id])`, `@@index([status])`, `@@index([user_id, status])`
+  - `Transaction`: `@@index([user_id])`, `@@index([account_id])`, `@@index([user_id, status])`
+  - `Seller`: keep `chat_id` unique (already present); no new index needed.
+- Generate migration; verify on a copy of prod data with `EXPLAIN ANALYZE`.
+- **Deliverable:** one migration file + RECAP.md note. No code change.
+
+### Step 2 — Prisma connection pool + slow-query logging (P0)
+- In `src/core/db/client.ts`: pass `?connection_limit=25&pool_timeout=10` (or equivalent adapter setting) via `DATABASE_URL`, or pass through PrismaPg config.
+- Enable Prisma `log: [{ level: 'query', emit: 'event' }]` and log queries > 100 ms with the params redacted.
+- Document the new env-var format in `.env.example`.
+
+### Step 3 — Marzban client hardening (P1)
+- Add `http.Agent({ keepAlive: true, maxSockets: 50 })` + `https.Agent` to the axios instance.
+- Add proactive token refresh: track `tokenIssuedAt`, refresh at 80% of TTL (assume 30 min if unknown).
+- Add a small retry policy: 1 retry on network error / 5xx, no retry on 4xx.
+- Add per-call timeout (`timeout: 8000`).
+- **No** queue / circuit-breaker yet — measure first.
+
+### Step 4 — Kill N+1 in `adminViewAccount.ts` (P0)
+- After first `findUnique`, store account in `ctx.session.viewedAccount`.
+- On any mutation, refresh once and re-cache.
+- Add a unit test that counts Prisma calls via a mock and asserts ≤ 2 per scene action.
+
+### Step 5 — Aggregate in `sellerReport.ts` (P0)
+- Replace `findMany` + JS reduce with `db.account.aggregate({ where, _sum: { price: true }, _count: true })`.
+- Same for the unpaid-stats path in `adminAccounts.ts` — fold into a single query with `groupBy`.
+
+### Step 6 — `select` discipline on hot paths (P1)
+- Audit every `findUnique` / `findMany` in `src/bot/scenes/**` and `src/bot/middleware/**`.
+- Add explicit `select` for: user lookup by chat_id, plan lookup, bot_messages, bot_settings, sub-token lookup.
+- Codify a rule in `CLAUDE.md` (interactive-mode change request, not autonomous).
+
+### Step 7 — Transactional buy/renew (P0 for correctness)
+- Wrap "create Transaction + decrement quota + reserve username" in `db.$transaction(...)`.
+- On Marzban call failure, mark transaction `failed` in a follow-up tx — never leave `provisioning` orphaned.
+- Add an idempotency check: same `transaction_id` reaching the executor twice is a no-op.
+
+### Step 8 — In-process cache for `BotSetting` + `BotMessage` (P1)
+- Replace TTL-only cache with a `Map` + version counter.
+- On any admin write to `bot_settings` / `bot_messages`, bump the version → next read repopulates.
+- For multi-process safety later: switch to Postgres `LISTEN/NOTIFY` (deferred, not in scope unless we go multi-process).
+
+### Step 9 — Per-update user middleware cache (P1)
+- A single `findUnique` per update for `User` by `chat_id`, attached to `ctx.state.user`.
+- All downstream handlers read `ctx.state.user` instead of re-querying.
+- Add a 30-second negative cache for `pending` / `banned` users so they don't hit the DB on every spam click.
+
+### Step 10 — Observability baseline (P2 but ship before scaling test)
+- Structured logger (pino) with `requestId` per update.
+- `/metrics` endpoint (prom-client) exposing: updates/sec, prisma query duration histogram, marzban call duration, scene transition counts.
+- Wire a `process.on('unhandledRejection')` that logs and continues.
+
+### Step 11 — Load test (validation)
+- Script a synthetic 10K-user replay (start, view, buy, renew, view).
+- Run against a staging DB seeded with 10K users + 10K accounts.
+- Confirm SLOs from the top of this doc. If any miss, open follow-up issue, don't extend this branch.
+
+---
+
+## Decision Log
+
+Decisions taken while doing this work go in `ARCHITECTURE.md` (not here). Each PR's `RECAP.md` summarizes what changed and why.
+
+## Definition of Done
+
+- [ ] Steps 1–9 merged.
+- [ ] `EXPLAIN ANALYZE` evidence for the 5 hottest queries attached to the PR for Step 1.
+- [ ] Load-test report (Step 11) attached to the final PR.
+- [ ] `yarn test` + `yarn lint` clean.
+- [ ] `ARCHITECTURE.md` updated with any new architectural decisions.
+- [ ] No new dependencies beyond `pino` and `prom-client` (and only if Step 10 lands).

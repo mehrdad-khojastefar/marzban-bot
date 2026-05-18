@@ -1,31 +1,22 @@
-# Commit Recap
+# RECAP — Speed & Scalability Plan
 
 ## What changed
-Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
+- Rewrote `WORKING.md` to be the source of truth for the speed/scalability initiative: SLOs, prioritized findings (P0/P1/P2), an 11-step work plan, and a Definition of Done.
+- Added a new top-level `Performance & Scalability Design` section to `DESIGN.md` covering:
+  - Load model and target architecture diagram
+  - Database indexing strategy (table → index → query speeded up)
+  - Connection pool, in-process caching, and Marzban client design
+  - Transactional boundaries for buy/renew flows
+  - Observability contract (pino + prom-client, no new infra)
+  - Explicit non-goals to prevent scope creep
 
-## Key decisions
-- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
-- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
-- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
-- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
-- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
+## Why
+The bot needs to handle 10K concurrent users on a single VPS. A codebase audit surfaced concrete bottlenecks — missing indexes, default Prisma pool size, N+1 reads in `adminViewAccount.ts`, unbounded `findMany` in `sellerReport.ts`, no Marzban keep-alive, no observability. We wrote the plan first so each follow-up PR is a small, reviewable, independently shippable change against a known target.
 
-## Files changed
-```
-prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
-prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
+## Decisions
+- **No Redis, no rewrite, no new infra.** In-process LRU + Postgres + a single Node process per surface (bot / sub / premzy) is enough at 10K. Revisit only if measurement says so.
+- **Each step is its own PR.** Steps 1–11 are independently shippable. No bundling.
+- **Indexes first.** Step 1 alone removes the worst full-table scans and is reversible by dropping the migration.
 
-src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
-src/bot/context.ts                             # Added renewAccountId to SessionData
-src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
-src/bot/scenes/index.ts                        # Registered renewAccountScene
-src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
-src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
-src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
-src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
-src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
-
-WORKING.md                                     # Updated with full renew feature spec
-ARCHITECTURE.md                                # Updated with renew architecture decisions
-DESIGN.md                                      # Updated with renew scene map + flows
-```
+## Out of scope
+Admin panel, CLI, E2E tests (already deferred in `TODO.md`).
