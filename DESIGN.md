@@ -192,3 +192,53 @@ const buyEnabled = await getSetting('buy_enabled')  // "true" | "false"
 - **Exceptions:** Config/subscription links sent as separate copyable messages.
 - **Language:** Persian (فارسی)
 - **Copyable text:** Wrap in ``` for code blocks (card numbers, links, etc.)
+
+## Error Reporting (operational, not user-facing)
+
+Errors from the bot and side servers are mirrored to a private Telegram
+group so the operator sees production issues without tailing logs.
+
+### Message format
+
+```
+🚨 [production] bot: TypeError: Cannot read properties of undefined (reading 'id')
+
+context:
+  user_id: 12345678
+  scene: BUY_ACCOUNT
+  action: pick_plan:7
+  update: callback_query
+
+stack:
+  at buyAccountScene (src/bot/scenes/buyAccount.ts:142:18)
+  at processTicksAndRejections (node:internal/process/task_queues:95:5)
+  ...
+
+cause:
+  PrismaClientKnownRequestError: …
+    at …
+```
+
+Sent as a `<pre>`-formatted message. No buttons, no interactivity —
+read-only operator output.
+
+### Source tags
+- `bot` — Telegraf handler/scene errors
+- `sub` — subscription proxy HTTP errors
+- `premzy` — Premzy callback server HTTP errors
+- `process` — `uncaughtException` / `unhandledRejection`
+
+### Behavior rules
+- Never sent to end users. Failure to deliver is silent (console only).
+- User-facing error message in the bot is unchanged — reply first, report after.
+- The process does NOT exit on `uncaughtException`. Node's default exit is
+  explicitly overridden so a stray throw never takes the service down. The
+  error is reported and execution continues.
+- Sub responds `502` to the HTTP client, then reports.
+- Premzy responds `500` to the HTTP client, then reports.
+- Duplicate errors within 60s collapse into a single message with "×N more".
+- Hard ceiling: 30 reports/minute per process.
+
+### No UI surface
+No scene, no command, no button. Invisible inside the bot. Configured via
+env vars only (`ERROR_CHAT_ID`, `ERROR_REPORTING_ENABLED`).

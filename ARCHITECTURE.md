@@ -163,4 +163,70 @@ DB-backed message templates with `{placeholder}` interpolation. Cached with 30s 
 
 ```
 loadEnv() → initDb() → initMarzban() → initMessageService() → initSettingService() → createBot()
+         → initErrorReporter(bot.telegram, env.ERROR_CHAT_ID)
+         → registerProcessHandlers()    // uncaughtException, unhandledRejection (no-exit)
+         → bot.launch()
 ```
+
+The sub and premzy entrypoints follow the same pattern: build a `Telegram`
+client, call `initErrorReporter`, register process handlers, then start
+their HTTP server.
+
+## Error Reporting
+
+All runtime errors are forwarded to a private Telegram group for triage,
+in addition to existing `console.error` logging. The process never exits
+on errors — reporting is best-effort and non-fatal.
+
+### Sources of errors captured
+1. **Bot handler errors** — caught by `bot/middlewares/errorHandler.ts`,
+   delegated to `errorReporter` after the user-facing reply.
+2. **Process-level errors** — `process.on('uncaughtException')` and
+   `process.on('unhandledRejection')` registered in each entrypoint
+   (`src/bot/main.ts`, `src/sub/main.ts`, `src/premzy/main.ts`). Handler
+   reports the error and returns; the process keeps running. Node's
+   default-exit behavior is explicitly overridden.
+3. **Sub server errors** (`src/sub/`) — the HTTP request handler's
+   `catch` block delegates to the reporter, then responds 502.
+4. **Premzy callback server errors** (`src/premzy/`) — same pattern as sub.
+
+### `errorReporter` service (`src/core/utils/errorReporter.ts`)
+Singleton initialized at startup with a Telegraf `Telegram` client and
+the target chat id. Exposes:
+
+```typescript
+initErrorReporter(opts: { telegram: Telegram; chatId: string; env: string; enabled?: boolean })
+reportError(err: unknown, context?: ErrorContext): Promise<void>
+registerProcessHandlers(source: 'bot' | 'sub' | 'premzy'): void
+```
+
+Shared across `bot`, `sub`, and `premzy` — initialized once per
+entrypoint, imported wherever needed.
+
+### Payload format
+Single Telegram message in `<pre>` HTML mode:
+- Header: `🚨 [<env>] <source>: <ErrorName>: <message>`
+  (`source` = `bot` | `sub` | `premzy` | `process`)
+- Context block (user id, scene, callback data, route, etc. — whichever apply)
+- Full `err.stack` (or `util.inspect(err)` if no stack)
+- Cause chain via `err.cause` walked recursively (max depth 5)
+
+Messages longer than ~3,800 chars are split across multiple messages to
+stay under Telegram's 4,096-char limit; each part tagged `(1/N)`.
+
+### Failure isolation
+`reportError` MUST never throw. All `sendMessage` calls are wrapped in
+`try/catch` and on failure fall back to `console.error('errorReporter failed', e)`.
+The reporter never cascades into the error path it serves.
+
+### Rate limiting & dedupe
+- In-memory map keyed by `errorName + first stack frame`, TTL 60s.
+- Repeats within TTL increment a counter; on eviction a single
+  "×N suppressed" summary is sent.
+- Hard ceiling: 30 reports/minute. Excess dropped with a counter log.
+
+### Environment variables (new)
+| Var | Required | Purpose |
+|---|---|---|
+| `ERROR_CHAT_ID` | no | Telegram group id (e.g. `-1001234567890`). If unset, reporter no-ops with a startup warning. |
+| `ERROR_REPORTING_ENABLED` | no (default `"true"`) | Kill-switch — set to `"false"` to disable without removing the chat id. |

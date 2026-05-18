@@ -2,6 +2,7 @@ import { Middleware } from 'telegraf';
 import { BotContext } from '../context';
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
+import { reportError } from '../../core/utils/errorReporter';
 
 export function errorHandler(): Middleware<BotContext> {
   return async (ctx, next) => {
@@ -10,12 +11,9 @@ export function errorHandler(): Middleware<BotContext> {
     } catch (err) {
       const userId = ctx.from?.id;
       const scene = ctx.scene?.current?.id ?? 'none';
-      const cbData = ctx.callbackQuery && 'data' in ctx.callbackQuery
-        ? ctx.callbackQuery.data
-        : undefined;
-      console.error(
-        `[ERROR] user=${userId} scene=${scene}${cbData ? ` action=${cbData}` : ''}`,
-      );
+      const cbData =
+        ctx.callbackQuery && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+      console.error(`[ERROR] user=${userId} scene=${scene}${cbData ? ` action=${cbData}` : ''}`);
       console.error(err);
       try {
         const msg = await getMessage('error.message');
@@ -28,6 +26,15 @@ export function errorHandler(): Middleware<BotContext> {
           // Nothing we can do
         }
       }
+
+      void reportError(err, {
+        source: 'bot',
+        user_id: userId,
+        scene,
+        action: cbData,
+        update: ctx.updateType,
+        chat_id: ctx.chat?.id,
+      });
     }
   };
 }

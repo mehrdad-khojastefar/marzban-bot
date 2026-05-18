@@ -1,43 +1,69 @@
-# Commit Recap
+# Commit Recap — Error Tracer
 
 ## What was built
-A full Persian Telegram VPN bot with Marzban integration — DB layer, message system, all 9 scenes, admin payment approval, and account provisioning.
+A shared error-reporting service that forwards full tracebacks from the
+bot, sub proxy, and Premzy callback server to a private Telegram group.
+Process-level errors (`uncaughtException`, `unhandledRejection`) are also
+captured, but the process does NOT exit — it reports and keeps running.
 
-## Key choices
-- **Prisma 7** with PostgreSQL — 5 models (User, Plan, Account, Payment, BotMessage)
-- **DB-backed messages** — all Persian text in `bot_messages` table, 5min in-memory cache
-- **Telegraf scenes** — 9 scenes following FSM pattern, all reading from design specs
-- **Manual payment** — user sends receipt photo, admin approves/rejects via inline buttons
-- **Test accounts** — 1 hour, 100MB, one per user, checked via `has_test` flag
-- **Zod env validation** — fail fast on startup if any required var is missing
-- **103 tests** across 14 files, all passing
+## Why
+Operator currently has to tail server logs to see production errors. With
+this, any thrown error (handler, scene, HTTP route, or top-level) appears
+in the operator's Telegram group with full stack, cause chain, and context
+(user, scene, callback action, route, etc.).
+
+## How it works
+- `src/core/utils/errorReporter.ts` — singleton service. `initErrorReporter`
+  at startup, `reportError(err, context)` from anywhere, `registerProcessHandlers(source)`
+  to override Node's default-exit behavior.
+- Each entrypoint (`src/bot/main.ts`, `src/sub/main.ts`, `src/premzy/main.ts`)
+  initializes the reporter and registers process handlers.
+- Bot middleware (`errorHandler.ts`) and `bot.catch` both delegate.
+- Sub and Premzy HTTP error blocks delegate.
+- `reportError` itself NEVER throws — failures land in `console.error`.
+
+## Design decisions
+- **No-op without `ERROR_CHAT_ID`** — service degrades gracefully so dev
+  environments don't need the var.
+- **Dedupe within 60s** keyed on `errorName + first stack frame` — prevents
+  the same recurring error from spamming the group. Suppressed count is
+  flushed when the TTL expires.
+- **Hard rate cap** of 30 reports/minute per process.
+- **Chunking** at ~3,800 chars to stay under Telegram's 4,096 limit;
+  multi-message reports tagged `(1/N)`.
+- **Cause chain** walked up to depth 5.
+- **HTML escape** all user content before wrapping in `<pre>`.
+- **Process no-exit**: `uncaughtException` reports but returns; Node's
+  default-exit is explicitly overridden per the user's requirement
+  ("the bot should not exit, just send the trace").
 
 ## Files
-```
-prisma/
-├── schema.prisma         # 5 models + 2 enums
-└── prisma.config.ts      # Prisma 7 config
+### New
+- `src/core/utils/errorReporter.ts`
+- `src/core/utils/__tests__/errorReporter.test.ts` (15 tests)
 
-src/core/
-├── marzban/              # Marzban API client (44 methods, 76 tests)
-├── db/                   # Prisma singleton (initDb/getDb)
-└── utils/                # Config (Zod), formatting (Persian digits, bytes, price)
+### Modified
+- `ARCHITECTURE.md` — added Error Reporting section + updated startup sequence
+- `DESIGN.md` — added Error Reporting (operational) section
+- `.env.example` — added `ERROR_CHAT_ID`, `ERROR_REPORTING_ENABLED`
+- `src/core/utils/config.ts` — added env schema entries
+- `src/core/utils/index.ts` — re-exports
+- `src/bot/bot.ts` — init reporter, wire `bot.catch`
+- `src/bot/main.ts` — `registerProcessHandlers('bot')`
+- `src/bot/middlewares/errorHandler.ts` — delegate to `reportError`
+- `src/sub/main.ts` — init reporter + process handlers
+- `src/sub/server.ts` — delegate in HTTP catch block
+- `src/premzy/main.ts` — init reporter + process handlers
+- `src/premzy/server.ts` — delegate in HTTP catch block
 
-src/bot/
-├── bot.ts                # createBot() wiring
-├── main.ts               # Entry point
-├── context.ts            # BotContext + SessionData
-├── scenes/               # 9 scenes (start, home, buy, payment, manage, view, test, support, error)
-├── handlers/             # Admin payment approve/reject
-├── middlewares/           # Error handler
-└── services/             # Message service (DB + cache)
+## Tests
+- 120 passing (15 new for errorReporter)
+- Covers format, HTML escape, non-Error values, cause chain, dedupe,
+  suppression summary, rate limit, sendMessage failure isolation, and
+  multi-chunk tagging.
 
-src/db/seeds/seed.ts      # Default plans + 22 bot messages
-```
-
-## Dig deeper
-- Architecture & decisions → `ARCHITECTURE.md`
-- Scene reference & API design → `DESIGN.md`
-- Scene specs → `design/bot/scenes/*.md`
-- Message registry → `design/bot/messages.md`
-- Marzban service guide → `docs/src/core/marzban/marzban_service.md`
+## Env vars added
+| Var | Required | Default | Purpose |
+|---|---|---|---|
+| `ERROR_CHAT_ID` | no | — | Telegram group id. Unset → reporter no-ops. |
+| `ERROR_REPORTING_ENABLED` | no | `"true"` | Kill-switch. |

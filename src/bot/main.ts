@@ -1,8 +1,11 @@
 import 'dotenv/config';
 import { createBot } from './bot';
+import { registerProcessHandlers } from '../core/utils/errorReporter';
 
 async function main() {
   const bot = await createBot();
+
+  registerProcessHandlers('bot');
 
   await bot.launch();
   console.log('Bot started.');

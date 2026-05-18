@@ -22,6 +22,11 @@ export const envSchema = z.object({
 
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
+
+  // Error reporting — full traceback forwarded to a Telegram group.
+  // If ERROR_CHAT_ID is unset, the reporter no-ops with a startup warning.
+  ERROR_CHAT_ID: z.string().optional(),
+  ERROR_REPORTING_ENABLED: z.string().default('true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

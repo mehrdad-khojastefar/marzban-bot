@@ -5,6 +5,7 @@ import { Telegraf } from 'telegraf';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { provisionAccount, buildFullAccountNotification } from '../core/provision';
 import { formatBytes } from '../core/utils/format';
+import { reportError } from '../core/utils/errorReporter';
 
 interface PremzyServerConfig {
   port: number;
@@ -113,7 +114,9 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
 
       // Only process checkout or failed (retry) transactions
       if (!['checkout', 'failed'].includes(transaction.status)) {
-        console.warn(`Premzy callback: unexpected status ${transaction.status} for ${transactionId}`);
+        console.warn(
+          `Premzy callback: unexpected status ${transaction.status} for ${transactionId}`,
+        );
         res.writeHead(200);
         res.end(JSON.stringify({ ok: false, message: `unexpected status: ${transaction.status}` }));
         return;
@@ -154,9 +157,14 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
       if (transaction.user) {
         try {
           const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
-          await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+          await telegram.sendMessage(transaction.user.chat_id.toString(), msg, {
+            parse_mode: 'HTML',
+          });
         } catch (notifyErr) {
-          console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+          console.error(
+            `Premzy callback: failed to notify user ${transaction.user.chat_id}:`,
+            notifyErr,
+          );
         }
       }
 
@@ -166,6 +174,11 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
       res.end(JSON.stringify({ ok: true }));
     } catch (err) {
       console.error(`Premzy callback: provisioning failed for ${transactionId}:`, err);
+      void reportError(err, {
+        source: 'premzy',
+        kind: 'provisioning_failed',
+        transaction_id: transactionId,
+      });
 
       // Mark as failed for admin visibility
       try {

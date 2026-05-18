@@ -10,6 +10,7 @@ import { initPremzyJwt } from '../premzy/jwt';
 import { createStage, SCENE_START } from './scenes';
 import { errorHandler, channelCheck } from './middlewares';
 import { registerAdminPaymentHandler, registerAdminUserApprovalHandler } from './handlers';
+import { initErrorReporter, reportError } from '../core/utils/errorReporter';
 
 export async function createBot(): Promise<Telegraf<BotContext>> {
   const env = loadEnv();
@@ -43,6 +44,14 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   }
 
   const bot = new Telegraf<BotContext>(env.TELEGRAM_BOT_TOKEN, telegrafOptions);
+
+  initErrorReporter({
+    telegram: bot.telegram,
+    chatId: env.ERROR_CHAT_ID,
+    env: env.NODE_ENV ?? 'development',
+    enabled: env.ERROR_REPORTING_ENABLED !== 'false',
+  });
+
   const stage = createStage();
 
   // Global intercept: 🏠 منو اصلی and /start always work, even inside scenes.
@@ -61,6 +70,12 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   // Catch-all for any unhandled errors that bypass the middleware
   bot.catch((err, ctx) => {
     console.error(`Unhandled bot error [user=${ctx.from?.id}]:`, err);
+    void reportError(err, {
+      source: 'bot',
+      kind: 'bot.catch',
+      user_id: ctx.from?.id,
+      update: ctx.updateType,
+    });
   });
 
   return bot;

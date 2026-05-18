@@ -2,6 +2,7 @@ import http from 'node:http';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { renameConfigLinks } from '../core/utils/format';
+import { reportError } from '../core/utils/errorReporter';
 
 interface SubServerConfig {
   port: number;
@@ -87,6 +88,12 @@ export async function startSubServer(config: SubServerConfig): Promise<http.Serv
       res.end(reEncoded);
     } catch (err) {
       console.error('Sub proxy error:', err);
+      void reportError(err, {
+        source: 'sub',
+        method: req.method,
+        url: req.url,
+        user_agent: req.headers['user-agent'],
+      });
       res.writeHead(502);
       res.end('Bad Gateway');
     }
