@@ -1,4 +1,10 @@
 import { Context, Scenes } from 'telegraf';
+import type { Logger } from 'pino';
+
+export interface BotState {
+  requestId?: string;
+  log?: Logger;
+}
 
 export interface SessionData extends Scenes.SceneSessionData {
   lastBotMessageId?: number;
@@ -60,4 +66,5 @@ export interface SessionData extends Scenes.SceneSessionData {
 export interface BotContext extends Context {
   session: SessionData;
   scene: Scenes.SceneContextScene<BotContext>;
+  state: BotState;
 }

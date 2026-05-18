@@ -8,11 +8,24 @@ import { initMessageService } from './services/messageService';
 import { initSettingService } from './services/settingService';
 import { initPremzyJwt } from '../premzy/jwt';
 import { createStage, SCENE_START } from './scenes';
-import { errorHandler, channelCheck } from './middlewares';
+import { errorHandler, channelCheck, observability } from './middlewares';
 import { registerAdminPaymentHandler, registerAdminUserApprovalHandler } from './handlers';
+import { createLogger } from '../core/logger';
+import { startMetricsServer } from '../core/metrics';
 
 export async function createBot(): Promise<Telegraf<BotContext>> {
   const env = loadEnv();
+  const logger = createLogger({ source: 'bot' });
+
+  // Surface unhandled rejections at the process level so they end up in
+  // structured logs (and the operator's alerts) instead of vanishing.
+  process.on('unhandledRejection', (reason) => {
+    logger.error({ err: reason }, 'unhandledRejection');
+  });
+
+  if (env.METRICS_PORT > 0) {
+    startMetricsServer({ port: env.METRICS_PORT, logger });
+  }
 
   const db = initDb(env.DATABASE_URL);
   initMarzban({
@@ -52,6 +65,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
 
   bot.use(session());
   bot.use(errorHandler());
+  bot.use(observability(logger));
   bot.use(channelCheck());
   bot.use(stage.middleware());
 
@@ -60,7 +74,8 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
 
   // Catch-all for any unhandled errors that bypass the middleware
   bot.catch((err, ctx) => {
-    console.error(`Unhandled bot error [user=${ctx.from?.id}]:`, err);
+    const log = ctx.state.log ?? logger;
+    log.error({ err, chatId: ctx.from?.id }, 'bot.catch');
   });
 
   return bot;

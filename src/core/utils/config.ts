@@ -22,6 +22,9 @@ export const envSchema = z.object({
 
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
+  LOG_LEVEL: z.string().default('info'),
+  // Prometheus /metrics port. Set to 0 to disable the metrics server entirely.
+  METRICS_PORT: z.coerce.number().int().default(9090),
 });
 
 export type Env = z.infer<typeof envSchema>;
