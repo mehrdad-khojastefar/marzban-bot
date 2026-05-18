@@ -1,6 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
+import { invalidateUserCache } from '../middlewares';
 import { getMessage } from '../services/messageService';
 import { loadEnv } from '../../core/utils/config';
 
@@ -137,6 +138,9 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
         },
       },
     });
+    // Drop the per-update cache so the user's next interaction sees
+    // status='approved' instead of the cached 'pending' / null.
+    invalidateUserCache(user.chat_id);
 
     // Notify user with channel invite link
     try {
@@ -203,6 +207,7 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
       where: { id: userId },
       data: { status: 'banned' },
     });
+    invalidateUserCache(user.chat_id);
 
     // Bot sends NOTHING to banned user — complete silence
     await ctx.editMessageText(

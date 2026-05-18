@@ -1,6 +1,5 @@
 import { Markup, Middleware } from 'telegraf';
 import { BotContext } from '../context';
-import { getDb } from '../../core/db';
 import { loadEnv } from '../../core/utils/config';
 
 /**
@@ -31,9 +30,11 @@ export function channelCheck(): Middleware<BotContext> {
       return;
     }
 
-    // Only check approved users (pending/banned are silent-blocked elsewhere)
-    const db = getDb();
-    const user = await db.user.findUnique({ where: { chat_id: BigInt(chatId) } });
+    // Only check approved users (pending/banned are silent-blocked elsewhere).
+    // The `attachUser` middleware has already resolved the row once per
+    // update and parked it on `ctx.state.user`; we re-use it instead of
+    // re-querying.
+    const user = ctx.state.user;
     if (!user || user.status !== 'approved') {
       await next();
       return;

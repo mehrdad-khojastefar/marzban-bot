@@ -1,4 +1,26 @@
 import { Context, Scenes } from 'telegraf';
+import type { UserStatus } from '@prisma/client';
+
+/**
+ * Slim view of the User row attached to every update by `attachUser`
+ * middleware. Keep this aligned with the `select` in
+ * `src/bot/middlewares/attachUser.ts`.
+ */
+export interface AttachedUser {
+  id: number;
+  chat_id: bigint;
+  status: UserStatus;
+  has_test: boolean;
+  bank_card_id: number | null;
+  plan_group_id: number | null;
+  first_name: string;
+  last_name: string | null;
+  username: string | null;
+}
+
+export interface BotState {
+  user?: AttachedUser | null;
+}
 
 export interface SessionData extends Scenes.SceneSessionData {
   lastBotMessageId?: number;
@@ -60,4 +82,5 @@ export interface SessionData extends Scenes.SceneSessionData {
 export interface BotContext extends Context {
   session: SessionData;
   scene: Scenes.SceneContextScene<BotContext>;
+  state: BotState;
 }
