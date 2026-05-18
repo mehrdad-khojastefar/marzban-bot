@@ -1,4 +1,19 @@
 import { Context, Scenes } from 'telegraf';
+import type { AccountPaymentStatus } from '@prisma/client';
+
+/**
+ * Slim cached view of the Account row currently being managed by the admin in
+ * SCENE_ADMIN_VIEW_ACCOUNT. Populated once per scene by `renderDetail`; read
+ * by the simple action handlers so they don't each re-query the DB just to
+ * resolve `marzban_username` / `payment_status` / `seller_*` ids.
+ */
+export interface ViewedAccountCache {
+  id: number;
+  marzban_username: string;
+  payment_status: AccountPaymentStatus | null;
+  seller_id: number | null;
+  seller_plan_id: number | null;
+}
 
 export interface SessionData extends Scenes.SceneSessionData {
   lastBotMessageId?: number;
@@ -9,6 +24,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   pendingPaymentId?: number;
   pendingTransactionId?: number;
   selectedAccountId?: number;
+  viewedAccount?: ViewedAccountCache;
   awaitingRename?: boolean;
   renewAccountId?: number;
 

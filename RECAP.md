@@ -1,31 +1,28 @@
-# Commit Recap
+# RECAP — Step 4: kill the N+1 in adminViewAccount
 
 ## What changed
-Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
+- `src/bot/context.ts`: new `ViewedAccountCache` interface and `viewedAccount?` field on `SessionData`. The cache holds the slim subset of fields the action handlers actually need (id, marzban_username, payment_status, seller_id, seller_plan_id).
+- `src/bot/scenes/adminViewAccount.ts`:
+  - New exported helpers `ensureViewedAccount(ctx, db)` and `clearViewedAccount(ctx)`.
+  - `renderDetail` continues to do its rich fetch (it needs `seller_plan` and `seller.user` for display) but now also populates the slim cache.
+  - The action handlers `switch_plan_X`, `reset_usage`, `disable_account`, `enable_account`, `toggle_payment`, and `confirm_delete` no longer re-query the account via `findUnique` — they read from `ctx.session.viewedAccount`.
+  - `back_accounts` and `confirm_delete` clear the cache to avoid stale data on re-entry.
+  - The `switch_plan_X` handler also parallelises its remaining `sellerPlan.findUnique` with the cache lookup via `Promise.all`.
+- New tests `src/bot/scenes/__tests__/adminViewAccountCache.test.ts` — 7 tests covering: null when no `selectedAccountId`, fetch + cache on first call, no DB calls on subsequent calls, refetch on id change, cache preservation when DB returns null, slim `select` shape, and `clearViewedAccount` behaviour.
 
-## Key decisions
-- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
-- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
-- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
-- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
-- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
+## Why
+The audit flagged 9 `db.account.findUnique` calls scattered across action handlers, most of them needed only `marzban_username` — a field that doesn't change during a viewing session. Per edit, that translated to ~3 DB roundtrips (enter render + handler refetch + post-mutation render) instead of 2. At 10K-user load with rapid button clicks, that compounds into avoidable p95 latency and pool pressure.
 
-## Files changed
-```
-prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
-prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
+## Decisions
+- **Cache slim, fetch rich on render.** The cache holds 5 small fields. The detail render keeps its rich include (it needs `seller_plan` + `seller.user`). Each action handler benefits from the cache; the render is unchanged.
+- **Key on `selectedAccountId`.** If the admin selects a different account, the cache key mismatches and we refetch. The cache is also cleared on scene exit and on delete.
+- **Two handlers still fetch.** `change_plan` and the text-input handler both need fresh `seller_plan` data for their calculations. They're rare paths and a legitimate fresh read. `change_plan` is now parallelised with the cache lookup.
+- **No global cache, no TTL.** The cache lives in the per-session object so it can't leak across users, and the renderDetail call after every mutation guarantees freshness.
 
-src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
-src/bot/context.ts                             # Added renewAccountId to SessionData
-src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
-src/bot/scenes/index.ts                        # Registered renewAccountScene
-src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
-src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
-src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
-src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
-src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
+## Verification
+- `yarn test` — 112/112 pass (7 new tests).
+- `npx eslint src/bot/scenes/adminViewAccount.ts src/bot/scenes/__tests__/adminViewAccountCache.test.ts src/bot/context.ts` — clean.
+- `grep -c "db.account.findUnique\\|db.account.update\\|db.account.delete" src/bot/scenes/adminViewAccount.ts` — was 16, now 11.
 
-WORKING.md                                     # Updated with full renew feature spec
-ARCHITECTURE.md                                # Updated with renew architecture decisions
-DESIGN.md                                      # Updated with renew scene map + flows
-```
+## What's next
+Step 5 in `WORKING.md`: replace `findMany` + JS reduce with `aggregate` / `groupBy` in `sellerReport.ts` and `adminAccounts.ts`.

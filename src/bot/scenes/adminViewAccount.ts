@@ -1,5 +1,6 @@
 import { Scenes, Markup } from 'telegraf';
-import { BotContext } from '../context';
+import type { PrismaClient } from '@prisma/client';
+import { BotContext, ViewedAccountCache } from '../context';
 import {
   SCENE_ADMIN_VIEW_ACCOUNT,
   SCENE_ADMIN_SELLER_ACCOUNTS,
@@ -26,6 +27,43 @@ function getBackScene(ctx: BotContext): string {
     : SCENE_ADMIN_SELLER_ACCOUNTS;
 }
 
+/**
+ * Slim selector matching ViewedAccountCache. Keep in sync with that interface.
+ */
+const viewedAccountSelect = {
+  id: true,
+  marzban_username: true,
+  payment_status: true,
+  seller_id: true,
+  seller_plan_id: true,
+} as const;
+
+/**
+ * Returns the cached slim view of the currently selected account, hitting the
+ * DB only when the cache is empty or stale (different `selectedAccountId`).
+ * Exported so the cache behaviour can be unit-tested without spinning up
+ * Telegraf.
+ */
+export async function ensureViewedAccount(
+  ctx: BotContext,
+  db: PrismaClient,
+): Promise<ViewedAccountCache | null> {
+  const id = ctx.session.selectedAccountId;
+  if (!id) return null;
+  const cached = ctx.session.viewedAccount;
+  if (cached && cached.id === id) return cached;
+  const row = await db.account.findUnique({
+    where: { id },
+    select: viewedAccountSelect,
+  });
+  if (row) ctx.session.viewedAccount = row;
+  return row;
+}
+
+export function clearViewedAccount(ctx: BotContext): void {
+  ctx.session.viewedAccount = undefined;
+}
+
 export const adminViewAccountScene = new Scenes.BaseScene<BotContext>(
   SCENE_ADMIN_VIEW_ACCOUNT,
 );
@@ -49,6 +87,15 @@ async function renderDetail(ctx: BotContext) {
     await ctx.scene.enter(getBackScene(ctx));
     return;
   }
+
+  // Populate the slim cache used by action handlers in this scene.
+  ctx.session.viewedAccount = {
+    id: account.id,
+    marzban_username: account.marzban_username,
+    payment_status: account.payment_status,
+    seller_id: account.seller_id,
+    seller_plan_id: account.seller_plan_id,
+  };
 
   const marzban = getMarzban();
   let usedTraffic = 0;
@@ -221,15 +268,15 @@ adminViewAccountScene.action(/^switch_plan_(\d+)$/, async (ctx) => {
   if (!accountId) return;
 
   const db = getDb();
-  const plan = await db.sellerPlan.findUnique({ where: { id: planId } });
-  if (!plan) return;
-
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
+  const [plan, cached] = await Promise.all([
+    db.sellerPlan.findUnique({ where: { id: planId } }),
+    ensureViewedAccount(ctx, db),
+  ]);
+  if (!plan || !cached) return;
 
   // Update Marzban
   const marzban = getMarzban();
-  await marzban.modifyUser(account.marzban_username, {
+  await marzban.modifyUser(cached.marzban_username, {
     data_limit: Number(plan.data_limit),
   });
 
@@ -378,44 +425,35 @@ adminViewAccountScene.action('cancel_edit', async (ctx) => {
 // --- Reset usage ---
 adminViewAccountScene.action('reset_usage', async (ctx) => {
   await ctx.answerCbQuery();
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) return;
-
   const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
+  const cached = await ensureViewedAccount(ctx, db);
+  if (!cached) return;
 
   const marzban = getMarzban();
-  await marzban.resetUserDataUsage(account.marzban_username);
+  await marzban.resetUserDataUsage(cached.marzban_username);
   await renderDetail(ctx);
 });
 
 // --- Enable / Disable ---
 adminViewAccountScene.action('disable_account', async (ctx) => {
   await ctx.answerCbQuery();
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) return;
-
   const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
+  const cached = await ensureViewedAccount(ctx, db);
+  if (!cached) return;
 
   const marzban = getMarzban();
-  await marzban.modifyUser(account.marzban_username, { status: 'disabled' });
+  await marzban.modifyUser(cached.marzban_username, { status: 'disabled' });
   await renderDetail(ctx);
 });
 
 adminViewAccountScene.action('enable_account', async (ctx) => {
   await ctx.answerCbQuery();
-  const accountId = ctx.session.selectedAccountId;
-  if (!accountId) return;
-
   const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
+  const cached = await ensureViewedAccount(ctx, db);
+  if (!cached) return;
 
   const marzban = getMarzban();
-  await marzban.modifyUser(account.marzban_username, { status: 'active' });
+  await marzban.modifyUser(cached.marzban_username, { status: 'active' });
   await renderDetail(ctx);
 });
 
@@ -426,10 +464,10 @@ adminViewAccountScene.action('toggle_payment', async (ctx) => {
   if (!accountId) return;
 
   const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
+  const cached = await ensureViewedAccount(ctx, db);
+  if (!cached) return;
 
-  const newStatus = account.payment_status === 'paid' ? 'unpaid' : 'paid';
+  const newStatus = cached.payment_status === 'paid' ? 'unpaid' : 'paid';
   await db.account.update({
     where: { id: accountId },
     data: { payment_status: newStatus },
@@ -459,12 +497,12 @@ adminViewAccountScene.action('confirm_delete', async (ctx) => {
   if (!accountId) return;
 
   const db = getDb();
-  const account = await db.account.findUnique({ where: { id: accountId } });
-  if (!account) return;
+  const cached = await ensureViewedAccount(ctx, db);
+  if (!cached) return;
 
   const marzban = getMarzban();
   try {
-    await marzban.removeUser(account.marzban_username);
+    await marzban.removeUser(cached.marzban_username);
   } catch {
     // May already be deleted on Marzban
   }
@@ -472,11 +510,13 @@ adminViewAccountScene.action('confirm_delete', async (ctx) => {
   await db.account.delete({ where: { id: accountId } });
 
   ctx.session.selectedAccountId = undefined;
+  clearViewedAccount(ctx);
   await ctx.scene.enter(SCENE_ADMIN_SELLER_ACCOUNTS);
 });
 
 // --- Back ---
 adminViewAccountScene.action('back_accounts', async (ctx) => {
   await ctx.answerCbQuery();
+  clearViewedAccount(ctx);
   await ctx.scene.enter(SCENE_ADMIN_SELLER_ACCOUNTS);
 });
