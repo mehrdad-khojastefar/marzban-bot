@@ -15,7 +15,11 @@ async function loadMessages(): Promise<Map<string, string>> {
   if (!db) {
     throw new Error('Message service not initialized. Call initMessageService() first');
   }
-  const rows = await db.botMessage.findMany();
+  // Hot path — runs whenever the in-process cache is cold or stale. Select
+  // only the two fields we actually use; never hydrate `id` / `updated_at`.
+  const rows = await db.botMessage.findMany({
+    select: { key: true, text: true },
+  });
   const map = new Map<string, string>();
   for (const row of rows) {
     map.set(row.key, row.text);

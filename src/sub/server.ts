@@ -28,10 +28,16 @@ export async function startSubServer(config: SubServerConfig): Promise<http.Serv
     }
 
     try {
-      // 1. Look up the account by sub token to get seller's link_prefix and marzban_username
+      // 1. Look up the account by sub token to get the seller's link_prefix
+      //    and the marzban_username we'll forward. Per-request hot path —
+      //    select only what we actually render.
       const account = await db.account.findFirst({
         where: { marzban_sub_token: token },
-        include: { seller: true },
+        select: {
+          marzban_username: true,
+          display_name: true,
+          seller: { select: { link_prefix: true } },
+        },
       });
 
       if (!account) {

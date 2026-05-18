@@ -32,9 +32,14 @@ export function channelCheck(): Middleware<BotContext> {
       return;
     }
 
-    // Only check approved users (pending/banned are silent-blocked elsewhere)
+    // Only check approved users (pending/banned are silent-blocked elsewhere).
+    // We only need `status` — selecting it explicitly avoids hydrating the
+    // entire User row on every update.
     const db = getDb();
-    const user = await db.user.findUnique({ where: { chat_id: BigInt(chatId) } });
+    const user = await db.user.findUnique({
+      where: { chat_id: BigInt(chatId) },
+      select: { status: true },
+    });
     if (!user || user.status !== 'approved') {
       await next();
       return;
