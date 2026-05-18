@@ -26,3 +26,20 @@ If account status is `expired`, `limited`, or `disabled` in Marzban, the renew c
 ### Transaction type discrimination
 A new `TransactionType` enum (`buy` | `renew`) on the Transaction model lets the admin approval handler and Premzy callback determine whether to call `provisionAccount()` (buy) or `renewAccount()` (renew).
 
+---
+
+## Performance & Scalability
+
+### Index policy
+Postgres does **not** auto-index foreign keys. Any column used in a `WHERE`, `ORDER BY`, or join condition in a per-update / per-request code path **must** have an explicit `@@index` in `prisma/schema.prisma`. This rule applies to every new scene and every new query.
+
+Initial baseline (migration `20260518000000_add_performance_indexes`):
+- `accounts`: `(user_id)`, `(seller_id)`, `(marzban_username)`, `(marzban_sub_token)`, `(expires_at)`, `(seller_id, payment_status)`
+- `users`: `(status)`
+- `payments`: `(user_id)`, `(status)`, `(user_id, status)`
+- `transactions`: `(user_id)`, `(account_id)`, `(user_id, status)` (in addition to pre-existing `(status)` and `(premzy_order_id)`)
+
+Composite indexes encode actual query shape — order matters. `(seller_id, payment_status)` accelerates "this seller's unpaid totals" but is useless for "all unpaid across sellers" (we'd add `(payment_status)` alone for that, only when a query path needs it).
+
+### Why hand-written idempotent SQL?
+The existing migration history uses `IF NOT EXISTS` / `IF EXISTS` patterns (see `20260508093043_drift_cleanup`) so migrations can recover from drift without manual surgery. Index migrations follow the same pattern: each `CREATE INDEX IF NOT EXISTS` is safe to re-run.
