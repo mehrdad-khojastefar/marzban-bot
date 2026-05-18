@@ -113,6 +113,7 @@ model User {
   plan_group    PlanGroup? @relation(fields: [plan_group_id], references: [id])
   bank_cards    BankCard[] @relation("UserBankCards")
 
+  @@index([status])
   @@map("users")
 }
 
@@ -154,6 +155,12 @@ model Account {
   seller_plan       SellerPlan?           @relation(fields: [seller_plan_id], references: [id])
   transactions      Transaction[]
 
+  @@index([user_id])
+  @@index([seller_id])
+  @@index([marzban_username])
+  @@index([marzban_sub_token])
+  @@index([expires_at])
+  @@index([seller_id, payment_status])
   @@map("accounts")
 }
 
@@ -173,6 +180,9 @@ model Payment {
   plan            Plan?         @relation(fields: [plan_id], references: [id])
   bank_card       BankCard?     @relation(fields: [bank_card_id], references: [id])
 
+  @@index([user_id])
+  @@index([status])
+  @@index([user_id, status])
   @@map("payments")
 }
 
@@ -202,6 +212,9 @@ model Transaction {
 
   @@index([status])
   @@index([premzy_order_id])
+  @@index([user_id])
+  @@index([account_id])
+  @@index([user_id, status])
   @@map("transactions")
 }
 
