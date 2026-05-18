@@ -1,5 +1,6 @@
 import { Context, Scenes } from 'telegraf';
 import type { AccountPaymentStatus, UserStatus } from '@prisma/client';
+import type { Logger } from 'pino';
 
 /**
  * Slim cached view of the Account row currently being managed by the admin in
@@ -34,6 +35,8 @@ export interface AttachedUser {
 
 export interface BotState {
   user?: AttachedUser | null;
+  requestId?: string;
+  log?: Logger;
 }
 
 export interface SessionData extends Scenes.SceneSessionData {
