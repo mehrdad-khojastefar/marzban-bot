@@ -44,6 +44,34 @@ explicitly says otherwise.
 
 ---
 
+## Performance Standards (for any new code)
+
+- **Indexes:** any column used in a `WHERE`, `ORDER BY`, or join condition in
+  a per-update / per-request code path must have an explicit `@@index` in
+  `prisma/schema.prisma`. Postgres does not auto-index foreign keys.
+- **`select` discipline:** Prisma `findUnique` / `findMany` in hot paths must
+  use `select: { ... }` — never fetch all columns implicitly.
+- **No unbounded list reads:** use `take: N` on `findMany`, or `aggregate` /
+  `groupBy` for sums and counts. Never load rows into Node to reduce in JS.
+- **Parallelise independent awaits** with `Promise.all`. Sequential `await`
+  on unrelated queries is forbidden in scene handlers.
+- **DB client construction:** always go through `createPrismaClient` /
+  `initDb` in `src/core/db`. Never call `new PrismaClient` / `new PrismaPg`
+  directly — the factory configures pool sizing, slow-query logging, and
+  log source tagging.
+- **Never log Prisma query params.** They can contain PII (`chat_id`, names,
+  tokens). The factory enforces this — don't bypass it.
+- **Marzban calls** must go through the shared `MarzbanClient`. It already
+  handles keep-alive, timeouts, proactive token refresh, and a single
+  transient retry on network/5xx. Don't build a parallel HTTP client.
+- **Transactional boundaries:** any multi-row write that must be atomic
+  (account create, renew, refund) goes in `db.$transaction(...)`. Marzban /
+  external API calls live outside the DB transaction.
+- Full design rationale and target SLOs live in `DESIGN.md → Performance &
+  Scalability Design` and `WORKING.md`.
+
+---
+
 ## Bot Rules
 - **Language:** Persian (فارسی) for all user-facing text.
 - **No hardcoded strings:** All copy comes from the `bot_messages` DB table.

@@ -1,4 +1,6 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios'
+import http from 'node:http'
+import https from 'node:https'
 import { MarzbanError } from './errors'
 import type {
   MarzbanClientConfig,
@@ -36,20 +38,43 @@ import type {
 } from './types'
 
 interface RetryableConfig extends InternalAxiosRequestConfig {
-  _retried?: boolean
+  _retriedAuth?: boolean
+  _retriedTransient?: boolean
   _skipAuth?: boolean
+}
+
+const DEFAULT_TIMEOUT_MS = 8_000
+const DEFAULT_KEEPALIVE_MAX_SOCKETS = 50
+const DEFAULT_TOKEN_TTL_MS = 30 * 60 * 1_000 // 30 minutes
+const TOKEN_REFRESH_RATIO = 0.8
+const DEFAULT_RETRY_DELAY_MS = 250
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export class MarzbanClient {
   private readonly http: AxiosInstance
   private token: string | null = null
+  private tokenIssuedAt = 0
+  private tokenTtlMs: number
   private tokenFetchPromise: Promise<string> | null = null
   private readonly config: MarzbanClientConfig
+  private readonly retryDelayMs: number
 
   constructor(config: MarzbanClientConfig) {
     this.config = config
+    this.retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS
+    this.tokenTtlMs = config.tokenTtlMs ?? DEFAULT_TOKEN_TTL_MS
+
+    const timeout = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    const maxSockets = config.keepAliveMaxSockets ?? DEFAULT_KEEPALIVE_MAX_SOCKETS
+
     this.http = axios.create({
       baseURL: config.baseUrl,
+      timeout,
+      httpAgent: new http.Agent({ keepAlive: true, maxSockets }),
+      httpsAgent: new https.Agent({ keepAlive: true, maxSockets }),
       paramsSerializer: (params) => {
         const searchParams = new URLSearchParams()
         for (const [key, value] of Object.entries(params)) {
@@ -80,39 +105,65 @@ export class MarzbanClient {
       async (error: AxiosError) => {
         const originalRequest = error.config as RetryableConfig | undefined
         if (!originalRequest) {
-          throw new MarzbanError(
-            error.message || 'Request failed',
-            0,
-          )
+          throw new MarzbanError(error.message || 'Request failed', 0)
         }
 
+        const status = error.response?.status ?? 0
+        const isTokenEndpoint = originalRequest.url === '/api/admin/token'
+
+        // ── Auth refresh path: 401 → invalidate token, retry once ──
         if (
-          error.response?.status === 401 &&
-          !originalRequest._retried &&
+          status === 401 &&
+          !originalRequest._retriedAuth &&
           !originalRequest._skipAuth &&
-          originalRequest.url !== '/api/admin/token'
+          !isTokenEndpoint
         ) {
-          originalRequest._retried = true
-          this.token = null
-          this.tokenFetchPromise = null
+          originalRequest._retriedAuth = true
+          this.invalidateToken()
           const newToken = await this.ensureToken()
           originalRequest.headers.set('Authorization', `Bearer ${newToken}`)
-          return this.http(originalRequest)
+          return this.http.request(originalRequest)
         }
 
-        const statusCode = error.response?.status ?? 0
+        // ── Transient retry path: network error or 5xx → retry once ──
+        const isNetworkError = !error.response
+        const isServerError = status >= 500 && status <= 599
+        if (
+          (isNetworkError || isServerError) &&
+          !originalRequest._retriedTransient
+        ) {
+          originalRequest._retriedTransient = true
+          if (this.retryDelayMs > 0) {
+            await sleep(this.retryDelayMs)
+          }
+          return this.http.request(originalRequest)
+        }
+
+        // ── Surface as MarzbanError ──
         const body = error.response?.data
         throw new MarzbanError(
-          error.message || `Request failed with status ${statusCode}`,
-          statusCode,
+          error.message || `Request failed with status ${status}`,
+          status,
           body,
         )
       },
     )
   }
 
+  private invalidateToken(): void {
+    this.token = null
+    this.tokenIssuedAt = 0
+    this.tokenFetchPromise = null
+  }
+
+  private isTokenStale(): boolean {
+    if (!this.token) return true
+    const elapsed = Date.now() - this.tokenIssuedAt
+    return elapsed >= this.tokenTtlMs * TOKEN_REFRESH_RATIO
+  }
+
   private async ensureToken(): Promise<string> {
-    if (this.token) return this.token
+    if (this.token && !this.isTokenStale()) return this.token
 
     if (this.tokenFetchPromise) return this.tokenFetchPromise
 
@@ -120,6 +171,7 @@ export class MarzbanClient {
     try {
       const token = await this.tokenFetchPromise
       this.token = token
+      this.tokenIssuedAt = Date.now()
       return token
     } finally {
       this.tokenFetchPromise = null
@@ -135,6 +187,10 @@ export class MarzbanClient {
     const response = await this.http.post<Token>('/api/admin/token', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
+    const ttlSeconds = response.data.expires_in
+    if (typeof ttlSeconds === 'number' && ttlSeconds > 0) {
+      this.tokenTtlMs = ttlSeconds * 1_000
+    }
     return response.data.access_token
   }
 
