@@ -18,25 +18,32 @@ sellerReportScene.enter(async (ctx) => {
   const db = getDb();
   const now = new Date();
 
-  const allAccounts = await db.account.findMany({
-    where: { seller_id: sellerId },
-  });
+  // One groupBy gives us all counts + sums split by payment_status (paid /
+  // unpaid / null). A second count handles "active" since it depends on the
+  // dynamic `now`, not a static enum. We never materialize the rows.
+  const [groups, active] = await Promise.all([
+    db.account.groupBy({
+      by: ['payment_status'],
+      where: { seller_id: sellerId },
+      _sum: { price: true },
+      _count: { _all: true },
+    }),
+    db.account.count({
+      where: { seller_id: sellerId, expires_at: { gt: now } },
+    }),
+  ]);
 
-  const total = allAccounts.length;
-  const active = allAccounts.filter((a) => a.expires_at > now).length;
-  const expired = total - active;
-
+  let total = 0;
   let totalAmount = 0;
   let paidAmount = 0;
-
-  for (const account of allAccounts) {
-    const price = account.price ?? 0;
-    totalAmount += price;
-    if (account.payment_status === 'paid') {
-      paidAmount += price;
+  for (const g of groups) {
+    total += g._count._all;
+    totalAmount += g._sum.price ?? 0;
+    if (g.payment_status === 'paid') {
+      paidAmount += g._sum.price ?? 0;
     }
   }
-
+  const expired = total - active;
   const remaining = totalAmount - paidAmount;
 
   const msg = await getMessage('seller.report', {
