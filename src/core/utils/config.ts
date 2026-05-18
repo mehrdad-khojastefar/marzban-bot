@@ -20,6 +20,18 @@ export const envSchema = z.object({
   PREMZY_EC_PRIVATE_KEY_PATH: z.string().optional(),
   PREMZY_CALLBACK_PORT: z.string().default('8086'),
 
+  // NowPayments crypto gateway (optional — only needed when payment_method = nowpayment)
+  NOWPAYMENTS_API_KEY: z.string().optional(),
+  NOWPAYMENTS_IPN_SECRET: z.string().optional(),
+  NOWPAYMENTS_CALLBACK_PORT: z.string().default('8087'),
+  NOWPAYMENTS_SANDBOX: z.string().default('false'),
+  NOWPAYMENTS_SUCCESS_URL: z.string().optional(),
+  NOWPAYMENTS_CANCEL_URL: z.string().optional(),
+  NOWPAYMENTS_INVOICE_TTL_MIN: z.string().default('20'),
+  NOWPAYMENTS_PUBLIC_CALLBACK_URL: z.string().optional(),
+
+  FX_PROVIDER: z.string().default('nobitex'),
+
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
 });

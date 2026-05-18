@@ -119,7 +119,7 @@ const defaultMessages: { key: string; text: string }[] = [
 
 const defaultSettings: { key: string; value: string }[] = [
   { key: 'buy_enabled', value: 'false' },
-  { key: 'payment_method', value: 'manual' }, // 'manual' or 'premzy'
+  { key: 'payment_method', value: 'manual' }, // 'manual' | 'premzy' | 'nowpayment'
   { key: 'test_enabled', value: 'false' },
   { key: 'renew_enabled', value: 'false' },
 ];

@@ -1,31 +1,70 @@
 # Commit Recap
 
 ## What changed
-Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
+Added **NowPayments** as a third `payment_method` option (alongside `manual` and `premzy`). Users can now pay for new accounts and renewals with crypto via NowPayments' hosted invoice flow.
 
 ## Key decisions
-- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
-- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
-- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
-- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
-- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
+- **Hosted invoice mode**, not on-chain Payment mode — coin/network selection happens on NowPayments' checkout page; we don't build an in-bot coin picker. User leaves Telegram briefly to pay.
+- **Pricing source of truth = Toman.** Live USDT/IRT rate from Nobitex (`api.nobitex.ir/market/stats`) → Toman → USD (USDT≈USD). 5-min cache. FX context (`fx_rate`, `fx_source`, `fx_fetched_at`) persisted on the Transaction for audit.
+- **No FX fallback in v1.** Nobitex failure throws `FxUnavailableError` and the user is told to retry. Wallex fallback is a documented follow-up.
+- **Reuse `Transaction` model.** Added `nowpayment_invoice_id`, `nowpayment_payment_id`, `nowpayment_invoice_url`, `pay_currency`, `usd_amount`, `fx_rate`, `fx_source`, `fx_fetched_at`. No new `TransactionStatus` values — the existing 11-state enum covers every NowPayments status.
+- **HMAC-SHA512 over sorted-keys JSON** for IPN signature verification (NowPayments quirk). Reusable `stringifySorted` helper handles nested objects recursively.
+- **Idempotent state machine** (`decideIpnOutcome`): once a transaction is `completed` we ignore further IPNs (except `refunded`); once `provisioning` we ignore everything to prevent double-provisioning.
+- **Late payment / partial payment → manual review.** No auto-activation after expiry; no auto-refunds. User gets a Persian "contact support" message; admin gets a notification with payment_id + amount.
+- **Sibling process model.** New `yarn nowpayment:start` entrypoint mirrors `yarn premzy:start` — separate HTTP server, separate Prisma + Telegraf instances.
 
 ## Files changed
 ```
-prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
-prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
+prisma/schema.prisma                              # Added 'nowpayment' enum value + 8 new columns + index
+prisma/migrations/20260518000000_.../              # Migration SQL
 
-src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
-src/bot/context.ts                             # Added renewAccountId to SessionData
-src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
-src/bot/scenes/index.ts                        # Registered renewAccountScene
-src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
-src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
-src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
-src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
-src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
+src/core/utils/config.ts                          # NOWPAYMENTS_* + FX_PROVIDER env schema
+src/core/fx/nobitex.ts                            # NEW: Nobitex USDT/IRT fetcher
+src/core/fx/index.ts                              # NEW: tomanToUsd() + FX cache + FxUnavailableError
+src/core/nowpayment/types.ts                      # NEW: API request/response + IPN payload types
+src/core/nowpayment/client.ts                     # NEW: createInvoice, getPaymentStatus, verifyIpnSignature
+src/core/nowpayment/service.ts                    # NEW: createInvoiceForTransaction + IPN state machine
+src/core/nowpayment/index.ts                      # NEW: lazy singleton client builder + re-exports
 
-WORKING.md                                     # Updated with full renew feature spec
-ARCHITECTURE.md                                # Updated with renew architecture decisions
-DESIGN.md                                      # Updated with renew scene map + flows
+src/nowpayment/main.ts                            # NEW: entrypoint
+src/nowpayment/server.ts                          # NEW: HTTP IPN server (POST /nowpayment/ipn)
+
+src/bot/scenes/buyAccount.ts                      # Added handleNowpaymentPayment branch
+src/bot/scenes/renewAccount.ts                    # Added handleNowpaymentRenew branch
+src/db/seeds/seed.ts                              # payment_method comment updated
+
+src/core/fx/__tests__/nobitex.test.ts             # NEW: 9 tests (parse, cache, errors, FxUnavailableError)
+src/core/nowpayment/__tests__/client.test.ts      # NEW: 10 tests (sorted-keys, sig verify, tamper, secrets)
+src/core/nowpayment/__tests__/service.test.ts     # NEW: 16 tests (state machine, late_finished, verifyIpn)
+
+.env.example                                      # Added NOWPAYMENTS_* + FX_PROVIDER vars
+package.json                                      # Added nowpayment:start script
+
+ARCHITECTURE.md                                   # Added NowPayments integration section
+WORKING.md                                        # Expanded from one-liner to full spec
+RECAP.md                                          # This file
 ```
+
+## Status mapping (NowPayments → Transaction)
+| NowPayments | Transaction | Action |
+|---|---|---|
+| `waiting`, `confirming`, `sending` | `checkout` | progress (no-op for user) |
+| `confirmed` | `paid` | awaiting `finished` |
+| `finished` | `provisioning` → `completed` | call provisionAccount/renewAccount |
+| `partially_paid` | `failed` | user → contact support, admin alert |
+| `expired` | `expired` | user → start new order |
+| `failed` | `failed` | user → contact support, admin alert |
+| `refunded` | `cancelled` | admin alert |
+| `finished` after expiry/cancel | (unchanged) | `late_finished` — **no auto-provision**, manual review |
+
+## Verification
+- `eslint 'src/**/*.{ts,tsx}'` — no new errors from this change (pre-existing 4 errors all in untouched files)
+- `vitest run` — **140 passed (140)**, 35 new tests added
+- TypeScript pre-existing `socks-proxy-agent` resolution warning extends to the new server (mirrors `src/premzy/server.ts` import pattern exactly)
+
+## How to deploy
+1. Apply migration: `yarn db:migrate` (or `prisma migrate deploy`)
+2. Set env: `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET`, `NOWPAYMENTS_PUBLIC_CALLBACK_URL` (publicly reachable URL pointing at `:8087/nowpayment/ipn`)
+3. Start the IPN server: `yarn nowpayment:start`
+4. Flip the BotSetting: `UPDATE bot_settings SET value='nowpayment' WHERE key='payment_method';` (or via existing admin tools)
+5. In the NowPayments dashboard, enable the coins/networks you want offered (USDT TRC20/ERC20/BEP20/Polygon, TRX, BTC, TON, etc.) and set the IPN URL.

@@ -9,13 +9,19 @@ import { getMarzban } from '../../core/marzban';
 import { formatBytes, formatPrice, formatDaysLeft } from '../../core/utils/format';
 import { BankCard, PaymentMethod, PrismaClient } from '@prisma/client';
 import { buildCheckoutUrl } from '../../premzy/jwt';
+import { getNowpaymentClient } from '../../core/nowpayment';
+import { createInvoiceForTransaction, NowpaymentApiError } from '../../core/nowpayment/service';
+import { FxUnavailableError } from '../../core/fx';
+import { loadEnv } from '../../core/utils/config';
 
 const GB = 1073741824;
 const GB_OPTIONS = [1, 2, 3, 5, 10, 20, 50, 100];
 
 async function getPaymentMethod(): Promise<PaymentMethod> {
   const method = await getSetting('payment_method');
-  return method === 'premzy' ? 'premzy' : 'manual';
+  if (method === 'premzy') return 'premzy';
+  if (method === 'nowpayment') return 'nowpayment';
+  return 'manual';
 }
 
 async function pickRandomCardForUser(userId: number): Promise<BankCard | null> {
@@ -199,8 +205,88 @@ async function handleRenewPayment(ctx: BotContext, params: RenewPaymentParams): 
 
   if (params.method === 'premzy') {
     await handlePremzyRenew(ctx, db, params);
+  } else if (params.method === 'nowpayment') {
+    await handleNowpaymentRenew(ctx, db, params);
   } else {
     await handleManualRenew(ctx, db, params);
+  }
+}
+
+async function handleNowpaymentRenew(
+  ctx: BotContext,
+  db: PrismaClient,
+  params: RenewPaymentParams,
+): Promise<void> {
+  const txn = await db.transaction.create({
+    data: {
+      user_id: params.userId,
+      plan_id: params.planId,
+      data_limit: params.dataLimit,
+      duration_days: params.durationDays,
+      amount: params.amount,
+      type: 'renew',
+      method: 'nowpayment',
+      status: 'pending',
+      account_id: params.accountId,
+    },
+  });
+
+  ctx.session.pendingTransactionId = txn.id;
+
+  const env = loadEnv();
+  try {
+    const client = getNowpaymentClient();
+    const result = await createInvoiceForTransaction(db, client, txn.id, {
+      ipnCallbackUrl: env.NOWPAYMENTS_PUBLIC_CALLBACK_URL,
+      successUrl: env.NOWPAYMENTS_SUCCESS_URL,
+      cancelUrl: env.NOWPAYMENTS_CANCEL_URL,
+      invoiceTtlMinutes: parseInt(env.NOWPAYMENTS_INVOICE_TTL_MIN),
+    });
+
+    const dataLabel = formatBytes(Number(params.dataLimit));
+    const priceLabel = formatPrice(params.amount);
+    const usdLabel = result.usdAmount.toFixed(2);
+
+    const msg =
+      `🔄 تمدید اکانت:\n` +
+      `📦 حجم اضافه: ${dataLabel}\n` +
+      `💰 مبلغ: ${priceLabel} (≈ ${usdLabel}$)\n\n` +
+      `🪙 پرداخت با ارز دیجیتال (USDT, TRX, BTC, TON و غیره)\n` +
+      `1️⃣ روی دکمه «پرداخت» بزنید تا به صفحه NowPayments منتقل شوید.\n` +
+      `2️⃣ ارز و شبکه دلخواه را انتخاب کنید.\n` +
+      `3️⃣ مبلغ نشان داده‌شده را به آدرس داده‌شده ارسال کنید.\n` +
+      `4️⃣ پس از تأیید شبکه، اکانت شما به صورت خودکار تمدید می‌شود.\n\n` +
+      `⏰ مهلت پرداخت: ${String(result.ttlMinutes)} دقیقه`;
+
+    await sendOrEdit(
+      ctx,
+      msg,
+      Markup.inlineKeyboard([
+        [Markup.button.url('💳 پرداخت', result.invoiceUrl)],
+        [Markup.button.callback('❌ انصراف', 'cancel_renew_checkout')],
+      ]),
+    );
+  } catch (err) {
+    let userMsg: string;
+    if (err instanceof FxUnavailableError) {
+      console.error('NowPayments renew: FX unavailable:', err);
+      userMsg = '⚠️ نرخ ارز در حال حاضر در دسترس نیست. لطفاً چند لحظه دیگر تلاش کنید.';
+    } else if (err instanceof NowpaymentApiError) {
+      console.error('NowPayments renew: createInvoice failed:', err);
+      userMsg = '❌ ایجاد فاکتور پرداخت ممکن نشد. لطفاً دوباره تلاش کنید.';
+    } else {
+      console.error('NowPayments renew: unexpected error:', err);
+      userMsg = '❌ خطای غیرمنتظره. لطفاً با پشتیبانی تماس بگیرید.';
+    }
+    await db.transaction.update({
+      where: { id: txn.id },
+      data: { status: 'failed', error_message: err instanceof Error ? err.message : String(err) },
+    });
+    await sendOrEdit(
+      ctx,
+      userMsg,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 بازگشت', 'back')]]),
+    );
   }
 }
 
