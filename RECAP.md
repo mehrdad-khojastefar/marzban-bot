@@ -1,31 +1,28 @@
-# Commit Recap
+# RECAP — Step 8: version-bumped cache for BotMessage / BotSetting
 
 ## What changed
-Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
+- `src/bot/services/messageService.ts`:
+  - Cache now keyed by a `version` counter in addition to `fetchedAt`. A read returns the cached map only if the version matches AND we're within the safety-net TTL.
+  - Fallback TTL extended from 5 min to **30 min** (we no longer rely on TTL for correctness — it's a safety net for out-of-process writes like a manual `psql` edit).
+  - New `bumpMessageCache()` — increments the version so the next read repopulates.
+  - New `updateMessage(key, text)` — upserts the row and bumps the cache. **Future admin scenes must use this** instead of writing to `bot_messages` directly.
+  - `invalidateCache()` retained for tests (hard reset).
+- `src/bot/services/settingService.ts`: same treatment. Fallback TTL extended from 30 s to 5 min. New `bumpSettingCache()` and `updateSetting(key, value)` exports.
+- `src/bot/services/index.ts`: re-exports the new write-through APIs so callers can `import { updateMessage, updateSetting }` from `../services`.
+- `src/bot/services/__tests__/messageService.test.ts`: extended TTL test to match the new 30-min fallback; two new tests covering `bumpMessageCache` triggers immediate refetch, and `updateMessage` upserts + invalidates.
 
-## Key decisions
-- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
-- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
-- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
-- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
-- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
+## Why
+The TTL-only cache meant any admin write to `bot_messages` / `bot_settings` (whenever an admin edit scene lands) wouldn't propagate to running bot processes for up to 5 min — a long time during a hot-fix. The version counter lets in-process writes invalidate instantly while keeping a long fallback TTL as protection against out-of-process drift.
 
-## Files changed
-```
-prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
-prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
+## Decisions
+- **Long fallback TTL (5–30 min), short invalidation window.** The version bump is the primary correctness mechanism; the TTL exists only so a manual `psql` edit eventually surfaces without a process restart.
+- **Write-through helpers (`updateMessage` / `updateSetting`).** Centralising the write + invalidate combo guarantees no caller can forget to bump.
+- **`invalidateCache` retained.** It's a hammer for tests and emergencies; production code paths should use the write-through API or `bumpMessageCache` / `bumpSettingCache`.
+- **No new dependencies.** `Map` + integer counter is sufficient at single-process scale. WORKING.md notes the multi-process path is Postgres `LISTEN/NOTIFY`, deferred.
 
-src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
-src/bot/context.ts                             # Added renewAccountId to SessionData
-src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
-src/bot/scenes/index.ts                        # Registered renewAccountScene
-src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
-src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
-src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
-src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
-src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
+## Verification
+- `yarn test` — 107/107 pass (2 new tests).
+- `npx eslint src/bot/services` — clean (one pre-existing `no-explicit-any` warning in the test file).
 
-WORKING.md                                     # Updated with full renew feature spec
-ARCHITECTURE.md                                # Updated with renew architecture decisions
-DESIGN.md                                      # Updated with renew scene map + flows
-```
+## What's next
+Step 9 in `WORKING.md`: per-update user middleware cache — fold the `User`-by-`chat_id` lookup into a middleware that attaches `ctx.state.user` once per update.

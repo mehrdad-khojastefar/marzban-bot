@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getMessage, invalidateCache, initMessageService } from '../messageService';
+import {
+  getMessage,
+  invalidateCache,
+  initMessageService,
+  bumpMessageCache,
+  updateMessage,
+} from '../messageService';
 
 function createMockDb(rows: { key: string; text: string }[]) {
   return {
     botMessage: {
       findMany: vi.fn().mockResolvedValue(rows),
+      upsert: vi.fn().mockResolvedValue({}),
     },
   } as any;
 }
@@ -77,19 +84,58 @@ describe('MessageService', () => {
     expect(db.botMessage.findMany).toHaveBeenCalledTimes(2);
   });
 
-  it('should refetch after TTL expires', async () => {
+  it('should refetch after the fallback TTL expires', async () => {
     const db = createMockDb(defaultRows);
     initMessageService(db);
 
     await getMessage('home.greeting');
 
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * 60 * 1000);
+    // Fallback TTL is 30 min; advance past it.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31 * 60 * 1000);
 
     await getMessage('home.greeting');
 
     expect(db.botMessage.findMany).toHaveBeenCalledTimes(2);
 
     vi.restoreAllMocks();
+  });
+
+  it('should refetch immediately after bumpMessageCache (no TTL wait)', async () => {
+    const db = createMockDb(defaultRows);
+    initMessageService(db);
+
+    await getMessage('home.greeting');
+    expect(db.botMessage.findMany).toHaveBeenCalledTimes(1);
+
+    bumpMessageCache();
+
+    await getMessage('home.greeting');
+    expect(db.botMessage.findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('updateMessage should upsert the row and bump the cache', async () => {
+    const db = createMockDb(defaultRows);
+    initMessageService(db);
+
+    // Prime the cache.
+    await getMessage('home.greeting');
+    expect(db.botMessage.findMany).toHaveBeenCalledTimes(1);
+
+    await updateMessage('home.greeting', 'سلام جدید');
+
+    expect(db.botMessage.upsert).toHaveBeenCalledWith({
+      where: { key: 'home.greeting' },
+      create: { key: 'home.greeting', text: 'سلام جدید' },
+      update: { text: 'سلام جدید' },
+    });
+
+    // Next read repopulates because the cache version was bumped.
+    db.botMessage.findMany.mockResolvedValue([
+      { key: 'home.greeting', text: 'سلام جدید' },
+    ]);
+    const after = await getMessage('home.greeting');
+    expect(after).toBe('سلام جدید');
+    expect(db.botMessage.findMany).toHaveBeenCalledTimes(2);
   });
 
   it('should replace missing placeholders with empty string', async () => {
