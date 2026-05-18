@@ -8,7 +8,7 @@ import { initMessageService } from './services/messageService';
 import { initSettingService } from './services/settingService';
 import { initPremzyJwt } from '../premzy/jwt';
 import { createStage, SCENE_START } from './scenes';
-import { errorHandler, channelCheck, eventLoggerMiddleware } from './middlewares';
+import { errorHandler, channelCheck, eventLoggerMiddleware, attachUser } from './middlewares';
 import {
   registerAdminPaymentHandler,
   registerAdminUserApprovalHandler,
@@ -58,6 +58,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
 
   bot.use(session());
   bot.use(errorHandler());
+  bot.use(attachUser());
   bot.use(eventLoggerMiddleware());
   bot.use(channelCheck());
   bot.use(stage.middleware());

@@ -1,5 +1,5 @@
 import { Context, Scenes } from 'telegraf';
-import type { AccountPaymentStatus } from '@prisma/client';
+import type { AccountPaymentStatus, UserStatus } from '@prisma/client';
 
 /**
  * Slim cached view of the Account row currently being managed by the admin in
@@ -13,6 +13,27 @@ export interface ViewedAccountCache {
   payment_status: AccountPaymentStatus | null;
   seller_id: number | null;
   seller_plan_id: number | null;
+}
+
+/**
+ * Slim view of the User row attached to every update by `attachUser`
+ * middleware. Keep this aligned with the `select` in
+ * `src/bot/middlewares/attachUser.ts`.
+ */
+export interface AttachedUser {
+  id: number;
+  chat_id: bigint;
+  status: UserStatus;
+  has_test: boolean;
+  bank_card_id: number | null;
+  plan_group_id: number | null;
+  first_name: string;
+  last_name: string | null;
+  username: string | null;
+}
+
+export interface BotState {
+  user?: AttachedUser | null;
 }
 
 export interface SessionData extends Scenes.SceneSessionData {
@@ -108,4 +129,5 @@ export interface SessionData extends Scenes.SceneSessionData {
 export interface BotContext extends Context {
   session: SessionData;
   scene: Scenes.SceneContextScene<BotContext>;
+  state: BotState;
 }
