@@ -1,7 +1,13 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
-import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../../core/provision';
+import {
+  provisionAccount,
+  buildFullAccountNotification,
+  renewAccount,
+  buildRenewNotification,
+  ProvisionConflictError,
+} from '../../core/provision';
 import { formatBytes } from '../../core/utils/format';
 import { getMessage } from '../services/messageService';
 
@@ -41,15 +47,22 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
       planLabel = formatBytes(dataLimit);
     }
 
-    // Mark as provisioning
+    // Record who approved. The provision functions own all status
+    // transitions (claim → provisioning → completed/failed) — we just stamp
+    // reviewed_by here.
     await db.transaction.update({
       where: { id: txnId },
-      data: { status: 'provisioning', reviewed_by: BigInt(ctx.from!.id) },
+      data: { reviewed_by: BigInt(ctx.from!.id) },
     });
 
-    // Route based on transaction type
+    const retryKeyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
+        Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
+      ],
+    ]);
+
     if (txn.type === 'renew') {
-      // ── Renew flow ──
       if (!txn.account_id) {
         await ctx.editMessageCaption('❌ خطا: اکانت مرتبط با تمدید یافت نشد.');
         return;
@@ -64,22 +77,14 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
           durationDays,
         });
       } catch (err) {
+        if (err instanceof ProvisionConflictError) {
+          await ctx.editMessageCaption('⚠️ این تراکنش قبلاً پردازش شده است.');
+          return;
+        }
         console.error('Account renewal failed:', err);
-        await db.transaction.update({
-          where: { id: txnId },
-          data: {
-            status: 'failed',
-            error_message: err instanceof Error ? err.message : String(err),
-          },
-        });
         await ctx.editMessageCaption(
           '❌ خطا در تمدید اکانت مرزبان. لطفاً دوباره تلاش کنید.',
-          Markup.inlineKeyboard([
-            [
-              Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
-              Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
-            ],
-          ]),
+          retryKeyboard,
         );
         return;
       }
@@ -93,7 +98,6 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
 
       await ctx.editMessageCaption(`✅ تأیید شد - اکانت ${renewResult.marzbanUsername} تمدید شد.`);
     } else {
-      // ── Buy flow (existing) ──
       let result;
       try {
         result = await provisionAccount(db, {
@@ -105,22 +109,14 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
           amount: txn.amount,
         });
       } catch (err) {
+        if (err instanceof ProvisionConflictError) {
+          await ctx.editMessageCaption('⚠️ این تراکنش قبلاً پردازش شده است.');
+          return;
+        }
         console.error('Account provisioning failed:', err);
-        await db.transaction.update({
-          where: { id: txnId },
-          data: {
-            status: 'failed',
-            error_message: err instanceof Error ? err.message : String(err),
-          },
-        });
         await ctx.editMessageCaption(
           '❌ خطا در ساخت اکانت مرزبان. لطفاً دوباره تلاش کنید.',
-          Markup.inlineKeyboard([
-            [
-              Markup.button.callback('🔄 تلاش مجدد', `approve_txn_${txnId}`),
-              Markup.button.callback('❌ رد', `reject_txn_${txnId}`),
-            ],
-          ]),
+          retryKeyboard,
         );
         return;
       }
