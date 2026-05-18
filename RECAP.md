@@ -1,31 +1,23 @@
-# Commit Recap
+# RECAP — Step 6: select discipline on the hot paths
 
 ## What changed
-Added user account renewal feature — users can renew (extend) existing VPN accounts independently from the buy flow.
+- `src/bot/middlewares/channelCheck.ts`: `db.user.findUnique` now selects only `status` instead of hydrating the whole `User` row on every update.
+- `src/bot/services/messageService.ts`: `db.botMessage.findMany` now selects `{ key, text }` only — skips `id` and `updated_at`.
+- `src/bot/services/settingService.ts`: `db.botSetting.findMany` now selects `{ key, value }` only — skips `updated_at`.
+- `src/sub/server.ts`: the per-request account lookup now uses `select` with a nested `seller.select.link_prefix` instead of `include: { seller: true }`. Down from a full Account + full Seller payload to three fields total.
 
-## Key decisions
-- **Separate feature flag:** `renew_enabled` BotSetting, independent of `buy_enabled` — old users can renew even when new sales are disabled
-- **Fair accumulation:** Data limit is ADDED to current Marzban data_limit (not replaced); expiry extends from `max(current_expire, now)` — no time or data is ever lost
-- **Marzban as source of truth:** On renew, current data_limit and expire are fetched live from Marzban (not DB) since admins can manually edit these values
-- **Transaction type discrimination:** New `TransactionType` enum (`buy` | `renew`) on Transaction model — admin approval handler and Premzy callback route to `provisionAccount()` or `renewAccount()` based on this
-- **Entry from VIEW_ACCOUNT:** Renew button appears on paid accounts when `renew_enabled = "true"`, transitions to RENEW_ACCOUNT scene which mirrors BUY_ACCOUNT's plan selection + payment flow
+## Why
+These four sites run on **every** update / message / subscription request — they're the hottest reads in the whole app. Selecting columns explicitly cuts serialisation cost, network bytes, and downstream object hydration with no behaviour change. It also makes adding new columns to those tables safe (a new `BankCard.is_admin_only` column won't accidentally pile into the channel-check payload).
 
-## Files changed
-```
-prisma/schema.prisma                           # Added TransactionType enum + type field on Transaction
-prisma/migrations/20260429100000_.../           # Migration SQL for the new enum + column
+## Decisions
+- **Scope kept tight.** This PR only touches the four highest-traffic per-update / per-request sites. Other call sites (admin scenes, seller scenes) are slower paths and can adopt `select` incrementally — the `Performance Standards` section in `CLAUDE.md` makes the rule explicit for new code.
+- **No new abstractions.** I considered a `selectUserStatus`-style helper, but a literal `select: { ... }` per call site is more readable, lets each caller pick exactly what it needs, and shows up cleanly in code review.
+- **Sub-server query is still `findFirst`.** `marzban_sub_token` isn't `@unique` at the schema level (potential legacy duplicates) so `findFirst` is the safe call. Step 1's index makes it cheap regardless.
 
-src/core/provision.ts                          # Added renewAccount() + buildRenewNotification()
-src/bot/context.ts                             # Added renewAccountId to SessionData
-src/bot/scenes/constants.ts                    # Added SCENE_RENEW_ACCOUNT
-src/bot/scenes/index.ts                        # Registered renewAccountScene
-src/bot/scenes/renewAccount.ts                 # NEW: full renew scene (per_gb + fixed + manual/premzy payment)
-src/bot/scenes/viewAccount.ts                  # Added renew button + action handler
-src/bot/handlers/adminPayment.ts               # Route approve handler for buy vs renew transactions
-src/premzy/server.ts                           # Route Premzy callback for buy vs renew transactions
-src/db/seeds/seed.ts                           # Added renew_enabled setting + 7 renew.* messages
+## Verification
+- `yarn test` — 105/105 pass. Existing mocks accept additional args, so adding `select` doesn't break them.
+- `npx eslint src/bot/services src/bot/middlewares src/sub` — clean (one pre-existing `no-explicit-any` warning unrelated to this PR).
+- Behaviour preserved by inspection — fields referenced downstream are all in the new `select` shape.
 
-WORKING.md                                     # Updated with full renew feature spec
-ARCHITECTURE.md                                # Updated with renew architecture decisions
-DESIGN.md                                      # Updated with renew scene map + flows
-```
+## What's next
+Step 7 in `WORKING.md`: wrap buy/renew flows in `db.$transaction`, separate Marzban side-effects from DB tx, and add idempotency guards for terminal-state transactions.
