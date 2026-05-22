@@ -5,6 +5,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice } from '../../core/utils/format';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const sellerReportScene = new Scenes.BaseScene<BotContext>(SCENE_SELLER_REPORT);
 
@@ -14,6 +15,8 @@ sellerReportScene.enter(async (ctx) => {
     await ctx.scene.enter(SCENE_SELLER_PANEL);
     return;
   }
+
+  logEvent('seller.report_viewed', { sellerId }, actorFrom(ctx.from));
 
   const db = getDb();
   const now = new Date();

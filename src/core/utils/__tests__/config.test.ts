@@ -12,6 +12,14 @@ const validEnv = {
   SUPPORT_USERNAME: '@support',
   SUB_BASE_URL: 'https://sub.example.com',
   MARZBAN_SUB_URL: 'http://internal-marzban:8085',
+  LOG_GROUP_ID: '-1001234567890',
+  LOG_TOPIC_USERS: '1',
+  LOG_TOPIC_PAYMENTS: '2',
+  LOG_TOPIC_ACCOUNTS: '3',
+  LOG_TOPIC_ADMIN: '4',
+  LOG_TOPIC_SELLER: '5',
+  LOG_TOPIC_ERRORS: '6',
+  LOG_TOPIC_SYSTEM: '7',
 };
 
 describe('loadEnv', () => {

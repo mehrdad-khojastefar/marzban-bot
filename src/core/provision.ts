@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { getMarzban, buildProxiesAndInbounds } from './marzban';
 import { extractSubToken, buildSubUrl, fetchAndRenameConfigs, formatBytes, formatDaysLeft } from './utils/format';
 import { loadEnv } from './utils/config';
+import { logEvent } from './events';
 
 function generateUsername(): string {
   const rand = Math.floor(100000 + Math.random() * 900000);
@@ -79,6 +80,17 @@ export async function provisionAccount(
     data: { account_id: account.id, status: 'completed' },
   });
 
+  // Look up owner chat_id for event log
+  const owner = await db.user.findUnique({ where: { id: req.userId } });
+  logEvent('account.created', {
+    marzbanUsername,
+    ownerChatId: owner?.chat_id ?? BigInt(0),
+    type: 'paid',
+    dataLimitBytes: req.dataLimit,
+    durationDays: req.durationDays,
+    expiresAt,
+  });
+
   return { marzbanUsername, subToken, accountId: account.id, expiresAt };
 }
 
@@ -153,6 +165,14 @@ export async function renewAccount(
   await db.transaction.update({
     where: { id: req.transactionId },
     data: { account_id: req.accountId, status: 'completed' },
+  });
+
+  logEvent('account.renewed', {
+    marzbanUsername: account.marzban_username,
+    oldExpiresAt: new Date(currentExpire * 1000),
+    newExpiresAt,
+    accumulatedBytes: req.dataLimitToAdd,
+    newDataLimitBytes: newDataLimit,
   });
 
   return {

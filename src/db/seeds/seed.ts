@@ -122,6 +122,7 @@ const defaultSettings: { key: string; value: string }[] = [
   { key: 'payment_method', value: 'manual' }, // 'manual' or 'premzy'
   { key: 'test_enabled', value: 'false' },
   { key: 'renew_enabled', value: 'false' },
+  { key: 'events_enabled', value: 'true' }, // master switch for event tracking
 ];
 
 function generateCode(): string {

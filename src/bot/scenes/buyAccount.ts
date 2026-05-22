@@ -8,6 +8,7 @@ import { getDb } from '../../core/db';
 import { formatBytes, formatPrice } from '../../core/utils/format';
 import { BankCard, PaymentMethod, PrismaClient } from '@prisma/client';
 import { buildCheckoutUrl } from '../../premzy/jwt';
+import { actorFrom, logEvent } from '../../core/events';
 
 const GB = 1073741824;
 const GB_OPTIONS = [1, 2, 3, 5, 10, 20, 50, 100];
@@ -192,6 +193,20 @@ async function handlePremzyPayment(
     },
   });
 
+  logEvent(
+    'payment.transaction_created',
+    {
+      txnId: txn.id,
+      transactionUuid: txn.transaction_id,
+      amount: params.amount,
+      method: 'premzy',
+      type: 'buy',
+      dataLimitBytes: Number(params.dataLimit),
+      durationDays: params.durationDays,
+    },
+    actorFrom(ctx.from),
+  );
+
   ctx.session.pendingTransactionId = txn.id;
 
   let checkoutUrl: string;
@@ -208,6 +223,16 @@ async function handlePremzyPayment(
     );
     return;
   }
+
+  logEvent(
+    'payment.premzy_checkout_created',
+    {
+      txnId: txn.id,
+      transactionUuid: txn.transaction_id,
+      amount: params.amount,
+    },
+    actorFrom(ctx.from),
+  );
 
   const dataLabel = formatBytes(Number(params.dataLimit));
   const priceLabel = formatPrice(params.amount);
@@ -258,6 +283,20 @@ async function handleManualPayment(
       bank_card_id: card.id,
     },
   });
+
+  logEvent(
+    'payment.transaction_created',
+    {
+      txnId: txn.id,
+      transactionUuid: txn.transaction_id,
+      amount: params.amount,
+      method: 'manual',
+      type: 'buy',
+      dataLimitBytes: Number(params.dataLimit),
+      durationDays: params.durationDays,
+    },
+    actorFrom(ctx.from),
+  );
 
   ctx.session.pendingTransactionId = txn.id;
 

@@ -20,6 +20,16 @@ export const envSchema = z.object({
   PREMZY_EC_PRIVATE_KEY_PATH: z.string().optional(),
   PREMZY_CALLBACK_PORT: z.string().default('8086'),
 
+  // Event tracking — forum supergroup + per-category topic IDs
+  LOG_GROUP_ID: z.string(),
+  LOG_TOPIC_USERS: z.coerce.number().int(),
+  LOG_TOPIC_PAYMENTS: z.coerce.number().int(),
+  LOG_TOPIC_ACCOUNTS: z.coerce.number().int(),
+  LOG_TOPIC_ADMIN: z.coerce.number().int(),
+  LOG_TOPIC_SELLER: z.coerce.number().int(),
+  LOG_TOPIC_ERRORS: z.coerce.number().int(),
+  LOG_TOPIC_SYSTEM: z.coerce.number().int(),
+
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
 });

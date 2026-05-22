@@ -11,6 +11,7 @@ import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const adminSellerDetailScene = new Scenes.BaseScene<BotContext>(
   SCENE_ADMIN_SELLER_DETAIL,
@@ -173,10 +174,16 @@ adminSellerDetailScene.action('deactivate', async (ctx) => {
   if (!sellerId) return;
 
   const db = getDb();
-  await db.seller.update({
+  const seller = await db.seller.update({
     where: { id: sellerId },
     data: { is_active: false },
   });
+
+  logEvent(
+    'admin.seller_deactivated',
+    { sellerId, chatId: seller.chat_id, note: seller.note },
+    actorFrom(ctx.from),
+  );
 
   await renderDetail(ctx);
 });
@@ -187,10 +194,16 @@ adminSellerDetailScene.action('activate', async (ctx) => {
   if (!sellerId) return;
 
   const db = getDb();
-  await db.seller.update({
+  const seller = await db.seller.update({
     where: { id: sellerId },
     data: { is_active: true },
   });
+
+  logEvent(
+    'admin.seller_activated',
+    { sellerId, chatId: seller.chat_id, note: seller.note },
+    actorFrom(ctx.from),
+  );
 
   await renderDetail(ctx);
 });

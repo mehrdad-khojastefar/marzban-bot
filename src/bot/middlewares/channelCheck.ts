@@ -2,6 +2,7 @@ import { Markup, Middleware } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 /**
  * Middleware that enforces channel membership for approved users.
@@ -42,6 +43,11 @@ export function channelCheck(): Middleware<BotContext> {
     try {
       const member = await ctx.telegram.getChatMember(env.CHANNEL_ID, chatId);
       if (['left', 'kicked'].includes(member.status)) {
+        logEvent(
+          'user.channel_check_failed',
+          { chatId, channelId: env.CHANNEL_ID },
+          actorFrom(ctx.from),
+        );
         const buttons = env.CHANNEL_INVITE_LINK
           ? Markup.inlineKeyboard([
               [Markup.button.url('📢 عضویت در کانال', env.CHANNEL_INVITE_LINK)],

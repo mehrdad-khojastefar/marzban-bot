@@ -8,6 +8,7 @@ import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
 import { formatPrice, formatBytes, buildSubUrl, fetchConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 const PAGE_SIZE = 8;
 
@@ -322,6 +323,31 @@ adminAccountsScene.action('confirm_create', async (ctx) => {
         expires_at: expiresAt,
       },
     });
+
+    logEvent(
+      'admin.account_created_manually',
+      {
+        marzbanUsername,
+        targetChatId: user.chat_id,
+        dataLimitBytes: dataLimit,
+        durationDays: duration,
+        price,
+      },
+      actorFrom(ctx.from),
+    );
+    logEvent(
+      'account.created',
+      {
+        marzbanUsername,
+        ownerChatId: user.chat_id,
+        type: 'paid',
+        dataLimitBytes: dataLimit,
+        durationDays: duration,
+        expiresAt,
+        sellerId: adminSeller?.id ?? null,
+      },
+      actorFrom(ctx.from),
+    );
 
     const subUrl = buildSubUrl(env.SUB_BASE_URL, `/sub/${extractSubToken(marzbanUser.subscription_url)}`);
 

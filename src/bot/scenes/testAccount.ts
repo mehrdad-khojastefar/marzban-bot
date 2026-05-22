@@ -7,6 +7,7 @@ import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
 import { buildSubUrl, fetchConfigs, extractSubToken } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 const TEST_DATA_LIMIT = 104857600; // 100MB
 const TEST_DURATION_SECONDS = 3600; // 1 hour
@@ -62,6 +63,12 @@ testAccountScene.enter(async (ctx) => {
     });
 
     await db.user.update({ where: { id: user.id }, data: { has_test: true } });
+
+    logEvent(
+      'account.test_provisioned',
+      { marzbanUsername, ownerChatId: user.chat_id },
+      actorFrom(ctx.from),
+    );
 
     const readyMsg = await getMessage('test.ready');
     const env = loadEnv();

@@ -8,8 +8,9 @@ import { initMessageService } from './services/messageService';
 import { initSettingService } from './services/settingService';
 import { initPremzyJwt } from '../premzy/jwt';
 import { createStage, SCENE_START } from './scenes';
-import { errorHandler, channelCheck } from './middlewares';
+import { errorHandler, channelCheck, eventLoggerMiddleware } from './middlewares';
 import { registerAdminPaymentHandler, registerAdminUserApprovalHandler } from './handlers';
+import { setBotInstance } from '../core/events';
 
 export async function createBot(): Promise<Telegraf<BotContext>> {
   const env = loadEnv();
@@ -43,6 +44,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
   }
 
   const bot = new Telegraf<BotContext>(env.TELEGRAM_BOT_TOKEN, telegrafOptions);
+  setBotInstance(bot);
   const stage = createStage();
 
   // Global intercept: 🏠 منو اصلی and /start always work, even inside scenes.
@@ -52,6 +54,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
 
   bot.use(session());
   bot.use(errorHandler());
+  bot.use(eventLoggerMiddleware());
   bot.use(channelCheck());
   bot.use(stage.middleware());
 

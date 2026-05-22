@@ -5,6 +5,7 @@ import { Telegraf } from 'telegraf';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../core/provision';
 import { formatBytes } from '../core/utils/format';
+import { logEvent, setBotInstance } from '../core/events';
 
 interface PremzyServerConfig {
   port: number;
@@ -24,6 +25,8 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
     telegrafOptions.telegram = { agent: agent as any };
   }
   const telegram = new Telegraf(config.telegramBotToken, telegrafOptions).telegram;
+  // Wire the event logger so webhook events can be reported to the log group.
+  setBotInstance({ telegram });
 
   const server = http.createServer(async (req, res) => {
     // Health check
@@ -44,6 +47,9 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
     const authHeader = req.headers['authorization'];
     if (!authHeader || authHeader !== config.vendorToken) {
       console.warn('Premzy callback: invalid authorization header');
+      logEvent('error.premzy_signature_invalid', {
+        remoteIp: req.socket.remoteAddress ?? undefined,
+      });
       res.writeHead(401);
       res.end(JSON.stringify({ error: 'unauthorized' }));
       return;
@@ -80,6 +86,13 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
     }
 
     console.log(`Premzy callback received: transaction_id=${transactionId}`);
+
+    logEvent('payment.premzy_callback_received', {
+      transactionUuid: transactionId,
+      status: 'received',
+      signatureValid: true,
+      remoteIp: req.socket.remoteAddress ?? undefined,
+    });
 
     try {
       // Look up the transaction by our UUID — exact match

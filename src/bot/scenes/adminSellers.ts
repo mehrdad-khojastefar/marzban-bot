@@ -6,6 +6,7 @@ import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const adminSellersScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_SELLERS);
 
@@ -106,12 +107,22 @@ adminSellersScene.on('text', async (ctx) => {
   // Check if user already exists in bot
   const user = await db.user.findUnique({ where: { chat_id: BigInt(chatId) } });
 
-  await db.seller.create({
+  const newSeller = await db.seller.create({
     data: {
       chat_id: BigInt(chatId),
       user_id: user?.id ?? null,
     },
   });
+
+  logEvent(
+    'admin.seller_created',
+    {
+      sellerId: newSeller.id,
+      chatId: BigInt(chatId),
+      note: null,
+    },
+    actorFrom(ctx.from),
+  );
 
   let resultMsg = await getMessage('admin.seller_added');
 

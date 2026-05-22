@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { createBot } from './bot';
+import { logEvent } from '../core/events';
 
 async function main() {
   const bot = await createBot();
@@ -7,8 +8,18 @@ async function main() {
   await bot.launch();
   console.log('Bot started.');
 
-  process.once('SIGINT', () => bot.stop('SIGINT'));
-  process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  logEvent('system.bot_started', {
+    nodeEnv: process.env.NODE_ENV ?? 'development',
+    version: process.env.npm_package_version ?? '0.1.0',
+  });
+
+  const stop = (signal: 'SIGINT' | 'SIGTERM') => {
+    logEvent('system.bot_stopping', { signal });
+    bot.stop(signal);
+  };
+
+  process.once('SIGINT', () => stop('SIGINT'));
+  process.once('SIGTERM', () => stop('SIGTERM'));
 }
 
 main().catch((err) => {

@@ -6,6 +6,7 @@ import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const adminBankCardsScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_BANK_CARDS);
 
@@ -126,13 +127,23 @@ adminBankCardsScene.action('skip_bank', async (ctx) => {
 
 async function createCard(ctx: BotContext, bankName: string | null) {
   const db = getDb();
-  await db.bankCard.create({
+  const card = await db.bankCard.create({
     data: {
       card_number: ctx.session.pendingCardNumber!,
       holder_name: ctx.session.pendingCardHolder!,
       bank_name: bankName,
     },
   });
+
+  logEvent(
+    'admin.bank_card_created',
+    {
+      cardId: card.id,
+      cardNumber: card.card_number,
+      holderName: card.holder_name,
+    },
+    actorFrom(ctx.from),
+  );
 
   ctx.session.adminCardStep = undefined;
   ctx.session.pendingCardNumber = undefined;
@@ -200,6 +211,16 @@ adminBankCardsScene.action(/^toggle_card_(\d+)$/, async (ctx) => {
     data: { is_active: !card.is_active },
   });
 
+  logEvent(
+    'admin.bank_card_updated',
+    {
+      cardId: card.id,
+      cardNumber: card.card_number,
+      holderName: card.holder_name,
+    },
+    actorFrom(ctx.from),
+  );
+
   // Re-show card detail
   const updatedCard = await db.bankCard.findUnique({
     where: { id: cardId },
@@ -260,6 +281,17 @@ adminBankCardsScene.action(/^delete_card_(\d+)$/, async (ctx) => {
   }
 
   await db.bankCard.delete({ where: { id: cardId } });
+
+  logEvent(
+    'admin.bank_card_deleted',
+    {
+      cardId: card.id,
+      cardNumber: card.card_number,
+      holderName: card.holder_name,
+    },
+    actorFrom(ctx.from),
+  );
+
   const msg = await getMessage('admin.card_deleted');
   await sendOrEdit(
     ctx,

@@ -3,6 +3,7 @@ import { BotContext } from '../context';
 import { getDb } from '../../core/db';
 import { getMessage } from '../services/messageService';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): void {
   const adminChatId = process.env.ADMIN_CHAT_ID;
@@ -20,6 +21,12 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
       await ctx.editMessageText('⚠️ این کاربر قبلاً بررسی شده است.');
       return;
     }
+
+    logEvent(
+      'admin.user_approve_clicked',
+      { targetUserId: userId, targetChatId: user.chat_id },
+      actorFrom(ctx.from),
+    );
 
     // Show active bank cards for selection (multi-select)
     const cards = await db.bankCard.findMany({ where: { is_active: true } });
@@ -79,6 +86,12 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
       .flat()
       .filter((btn) => 'text' in btn && btn.text.startsWith('✅ ')).length;
 
+    logEvent(
+      'admin.user_card_toggled',
+      { targetUserId: userId, cardId, selectedCount },
+      actorFrom(ctx.from),
+    );
+
     const db = getDb();
     const user = await db.user.findUnique({ where: { id: userId } });
     const headerText =
@@ -137,6 +150,16 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
         },
       },
     });
+
+    logEvent(
+      'admin.user_approval_confirmed',
+      {
+        targetUserId: userId,
+        targetChatId: user.chat_id,
+        cardIds: selectedCardIds,
+      },
+      actorFrom(ctx.from),
+    );
 
     // Notify user with channel invite link
     try {
@@ -203,6 +226,12 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
       where: { id: userId },
       data: { status: 'banned' },
     });
+
+    logEvent(
+      'admin.user_rejected',
+      { targetUserId: userId, targetChatId: user.chat_id },
+      actorFrom(ctx.from),
+    );
 
     // Bot sends NOTHING to banned user — complete silence
     await ctx.editMessageText(

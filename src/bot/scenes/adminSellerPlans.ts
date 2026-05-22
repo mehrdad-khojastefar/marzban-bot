@@ -6,6 +6,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice, formatBytes, toEnglishDigits } from '../../core/utils/format';
+import { actorFrom, logEvent } from '../../core/events';
 
 type AddPlanStep = 'idle' | 'type' | 'name' | 'data' | 'price';
 
@@ -203,6 +204,12 @@ adminSellerPlansScene.on('text', async (ctx) => {
       },
     });
 
+    logEvent(
+      'admin.seller_plans_changed',
+      { sellerId, action: 'added', planName: planDraft.name },
+      actorFrom(ctx.from),
+    );
+
     addPlanStep = 'idle';
     planDraft = {};
 
@@ -250,7 +257,12 @@ adminSellerPlansScene.action(/^deactivate_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const planId = parseInt(ctx.match[1]);
   const db = getDb();
-  await db.sellerPlan.update({ where: { id: planId }, data: { is_active: false } });
+  const plan = await db.sellerPlan.update({ where: { id: planId }, data: { is_active: false } });
+  logEvent(
+    'admin.seller_plans_changed',
+    { sellerId: plan.seller_id, action: 'updated', planName: plan.name },
+    actorFrom(ctx.from),
+  );
   await renderPlanList(ctx);
 });
 
@@ -258,7 +270,12 @@ adminSellerPlansScene.action(/^activate_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
   const planId = parseInt(ctx.match[1]);
   const db = getDb();
-  await db.sellerPlan.update({ where: { id: planId }, data: { is_active: true } });
+  const plan = await db.sellerPlan.update({ where: { id: planId }, data: { is_active: true } });
+  logEvent(
+    'admin.seller_plans_changed',
+    { sellerId: plan.seller_id, action: 'updated', planName: plan.name },
+    actorFrom(ctx.from),
+  );
   await renderPlanList(ctx);
 });
 

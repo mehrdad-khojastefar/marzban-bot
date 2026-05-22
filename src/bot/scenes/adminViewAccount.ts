@@ -19,6 +19,7 @@ import {
   toEnglishDigits,
 } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 function getBackScene(ctx: BotContext): string {
   return ctx.session.adminAccountsFrom === 'global'
@@ -313,6 +314,16 @@ adminViewAccountScene.on('text', async (ctx) => {
       data: { price: newPrice },
     });
 
+    logEvent(
+      'admin.account_edited',
+      {
+        marzbanUsername: account.marzban_username,
+        field: 'data_limit',
+        newValue: formatBytes(newDataLimit),
+      },
+      actorFrom(ctx.from),
+    );
+
     ctx.session.adminEditField = undefined;
     await renderDetail(ctx);
     return;
@@ -335,6 +346,16 @@ adminViewAccountScene.on('text', async (ctx) => {
       data: { expires_at: newExpiresAt },
     });
 
+    logEvent(
+      'admin.account_edited',
+      {
+        marzbanUsername: account.marzban_username,
+        field: 'expire',
+        newValue: newExpiresAt.toISOString(),
+      },
+      actorFrom(ctx.from),
+    );
+
     ctx.session.adminEditField = undefined;
     await renderDetail(ctx);
     return;
@@ -352,6 +373,16 @@ adminViewAccountScene.on('text', async (ctx) => {
       data: { price },
     });
 
+    logEvent(
+      'admin.account_edited',
+      {
+        marzbanUsername: account.marzban_username,
+        field: 'price',
+        newValue: formatPrice(price),
+      },
+      actorFrom(ctx.from),
+    );
+
     ctx.session.adminEditField = undefined;
     await renderDetail(ctx);
     return;
@@ -362,6 +393,16 @@ adminViewAccountScene.on('text', async (ctx) => {
       where: { id: accountId },
       data: { note: input || null },
     });
+
+    logEvent(
+      'admin.account_edited',
+      {
+        marzbanUsername: account.marzban_username,
+        field: 'note',
+        newValue: input || '—',
+      },
+      actorFrom(ctx.from),
+    );
 
     ctx.session.adminEditField = undefined;
     await renderDetail(ctx);
@@ -470,6 +511,17 @@ adminViewAccountScene.action('confirm_delete', async (ctx) => {
   }
 
   await db.account.delete({ where: { id: accountId } });
+
+  logEvent(
+    'admin.account_deleted',
+    { marzbanUsername: account.marzban_username, accountId },
+    actorFrom(ctx.from),
+  );
+  logEvent(
+    'account.deleted',
+    { marzbanUsername: account.marzban_username, triggeredBy: 'admin' },
+    actorFrom(ctx.from),
+  );
 
   ctx.session.selectedAccountId = undefined;
   await ctx.scene.enter(SCENE_ADMIN_SELLER_ACCOUNTS);

@@ -9,6 +9,7 @@ import { getMarzban } from '../../core/marzban';
 import { formatBytes, formatPrice, formatDaysLeft } from '../../core/utils/format';
 import { BankCard, PaymentMethod, PrismaClient } from '@prisma/client';
 import { buildCheckoutUrl } from '../../premzy/jwt';
+import { actorFrom, logEvent } from '../../core/events';
 
 const GB = 1073741824;
 const GB_OPTIONS = [1, 2, 3, 5, 10, 20, 50, 100];
@@ -223,6 +224,20 @@ async function handlePremzyRenew(
     },
   });
 
+  logEvent(
+    'payment.transaction_created',
+    {
+      txnId: txn.id,
+      transactionUuid: txn.transaction_id,
+      amount: params.amount,
+      method: 'premzy',
+      type: 'renew',
+      dataLimitBytes: Number(params.dataLimit),
+      durationDays: params.durationDays,
+    },
+    actorFrom(ctx.from),
+  );
+
   ctx.session.pendingTransactionId = txn.id;
 
   let checkoutUrl: string;
@@ -239,6 +254,16 @@ async function handlePremzyRenew(
     );
     return;
   }
+
+  logEvent(
+    'payment.premzy_checkout_created',
+    {
+      txnId: txn.id,
+      transactionUuid: txn.transaction_id,
+      amount: params.amount,
+    },
+    actorFrom(ctx.from),
+  );
 
   const dataLabel = formatBytes(Number(params.dataLimit));
   const priceLabel = formatPrice(params.amount);
@@ -291,6 +316,20 @@ async function handleManualRenew(
       account_id: params.accountId,
     },
   });
+
+  logEvent(
+    'payment.transaction_created',
+    {
+      txnId: txn.id,
+      transactionUuid: txn.transaction_id,
+      amount: params.amount,
+      method: 'manual',
+      type: 'renew',
+      dataLimitBytes: Number(params.dataLimit),
+      durationDays: params.durationDays,
+    },
+    actorFrom(ctx.from),
+  );
 
   ctx.session.pendingTransactionId = txn.id;
 

@@ -2,6 +2,14 @@ import { Middleware } from 'telegraf';
 import { BotContext } from '../context';
 import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
+import { actorFrom, logEvent } from '../../core/events';
+
+function updateTypeOf(ctx: BotContext): string {
+  if (ctx.callbackQuery) return 'callback_query';
+  if (ctx.message) return 'message';
+  if (ctx.inlineQuery) return 'inline_query';
+  return 'other';
+}
 
 export function errorHandler(): Middleware<BotContext> {
   return async (ctx, next) => {
@@ -14,9 +22,23 @@ export function errorHandler(): Middleware<BotContext> {
         ? ctx.callbackQuery.data
         : undefined;
       console.error(
-        `[ERROR] user=${userId} scene=${scene}${cbData ? ` action=${cbData}` : ''}`,
+        `[ERROR] user=${String(userId)} scene=${scene}${cbData ? ` action=${cbData}` : ''}`,
       );
       console.error(err);
+
+      const e = err as Error;
+      logEvent(
+        'error.handler_caught',
+        {
+          message: e?.message ?? String(err),
+          stack: e?.stack,
+          updateType: updateTypeOf(ctx),
+          scene,
+          callbackData: cbData,
+        },
+        actorFrom(ctx.from),
+      );
+
       try {
         const msg = await getMessage('error.message');
         await sendOrEdit(ctx, msg);

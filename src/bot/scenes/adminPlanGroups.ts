@@ -4,6 +4,7 @@ import { SCENE_ADMIN_PLAN_GROUPS, SCENE_HOME } from './constants';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatPrice, formatBytes, toEnglishDigits } from '../../core/utils/format';
+import { actorFrom, logEvent } from '../../core/events';
 
 const GB = 1073741824;
 
@@ -195,6 +196,12 @@ adminPlanGroupsScene.on('message', async (ctx) => {
         price,
       },
     });
+
+    logEvent(
+      'admin.plan_group_updated',
+      { groupId, code: group.code, name: group.name },
+      actorFrom(ctx.from),
+    );
 
     ctx.session.adminPlanStep = undefined;
     ctx.session.pendingPlanGb = undefined;

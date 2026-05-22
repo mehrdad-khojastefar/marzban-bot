@@ -5,6 +5,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { formatBytes } from '../../core/utils/format';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const paymentPendingScene = new Scenes.BaseScene<BotContext>(SCENE_PAYMENT_PENDING);
 
@@ -33,6 +34,12 @@ paymentPendingScene.on('photo', async (ctx) => {
     where: { id: txnId },
     data: { receipt_file_id: fileId, status: 'awaiting_approval' },
   });
+
+  logEvent(
+    'payment.receipt_uploaded',
+    { txnId, fileId },
+    actorFrom(ctx.from),
+  );
 
   const txn = await db.transaction.findUnique({
     where: { id: txnId },

@@ -4,6 +4,7 @@ import { SCENE_START, SCENE_HOME } from './constants';
 import { getMessage } from '../services/messageService';
 import { getDb } from '../../core/db';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const startScene = new Scenes.BaseScene<BotContext>(SCENE_START);
 
@@ -41,6 +42,10 @@ startScene.enter(async (ctx) => {
         data: { chat_id: chatId, user_id: adminUser.id, is_active: true },
       });
       console.log(`Admin seller record created: id=${seller.id}`);
+      logEvent('system.admin_bootstrapped', {
+        adminChatId: chatId,
+        sellerId: seller.id,
+      });
     } else if (!seller.user_id) {
       await db.seller.update({
         where: { id: seller.id },
@@ -131,6 +136,19 @@ startScene.enter(async (ctx) => {
       status: 'pending',
     },
   });
+
+  logEvent(
+    'user.registration_requested',
+    {
+      chatId,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      username: user.username,
+      planGroupName: planGroup.name,
+      planGroupCode: planGroup.code,
+    },
+    actorFrom(ctx.from),
+  );
 
   // Notify admin for approval
   const adminChatId = env.ADMIN_CHAT_ID;

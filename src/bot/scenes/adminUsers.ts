@@ -6,6 +6,7 @@ import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 export const adminUsersScene = new Scenes.BaseScene<BotContext>(SCENE_ADMIN_USERS);
 
@@ -237,6 +238,12 @@ adminUsersScene.action(/^reject_user_(\d+)$/, async (ctx) => {
     data: { status: 'banned' },
   });
 
+  logEvent(
+    'admin.user_rejected',
+    { targetUserId: userId, targetChatId: user.chat_id },
+    actorFrom(ctx.from),
+  );
+
   await sendOrEdit(
     ctx,
     `❌ کاربر ${user.first_name} (@${user.username ?? '—'}) رد شد و بن شد.`,
@@ -261,6 +268,12 @@ adminUsersScene.action(/^ban_user_(\d+)$/, async (ctx) => {
     where: { id: userId },
     data: { status: 'banned' },
   });
+
+  logEvent(
+    'admin.user_rejected',
+    { targetUserId: userId, targetChatId: user.chat_id },
+    actorFrom(ctx.from),
+  );
 
   await sendOrEdit(
     ctx,
@@ -366,6 +379,16 @@ adminUsersScene.action('confirm_cards', async (ctx) => {
       },
     },
   });
+
+  logEvent(
+    'admin.user_approval_confirmed',
+    {
+      targetUserId: userId,
+      targetChatId: user.chat_id,
+      cardIds: selected,
+    },
+    actorFrom(ctx.from),
+  );
 
   // Notify user if they were just approved, with channel invite link
   if (wasPending) {

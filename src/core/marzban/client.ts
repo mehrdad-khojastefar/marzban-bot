@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios'
 import { MarzbanError } from './errors'
+import { logEvent } from '../events'
 import type {
   MarzbanClientConfig,
   Token,
@@ -102,6 +103,26 @@ export class MarzbanClient {
 
         const statusCode = error.response?.status ?? 0
         const body = error.response?.data
+
+        // Emit error event for any non-success Marzban response (skip the
+        // expected 401 we just retried).
+        if (statusCode !== 401 || originalRequest._retried) {
+          let bodyStr: string | undefined
+          if (body !== undefined) {
+            try {
+              bodyStr = typeof body === 'string' ? body : JSON.stringify(body)
+            } catch {
+              bodyStr = String(body)
+            }
+          }
+          logEvent('error.marzban_api', {
+            endpoint: originalRequest.url ?? 'unknown',
+            method: (originalRequest.method ?? 'unknown').toUpperCase(),
+            status: statusCode,
+            body: bodyStr,
+          })
+        }
+
         throw new MarzbanError(
           error.message || `Request failed with status ${statusCode}`,
           statusCode,

@@ -4,6 +4,7 @@ import { getDb } from '../../core/db';
 import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../../core/provision';
 import { formatBytes } from '../../core/utils/format';
 import { getMessage } from '../services/messageService';
+import { actorFrom, logEvent } from '../../core/events';
 
 export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
   const adminChatId = process.env.ADMIN_CHAT_ID;
@@ -46,6 +47,18 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
       where: { id: txnId },
       data: { status: 'provisioning', reviewed_by: BigInt(ctx.from!.id) },
     });
+
+    logEvent(
+      'payment.admin_approved',
+      {
+        txnId: txn.id,
+        transactionUuid: txn.transaction_id,
+        amount: txn.amount,
+        targetChatId: txn.user.chat_id,
+        type: txn.type,
+      },
+      actorFrom(ctx.from),
+    );
 
     // Route based on transaction type
     if (txn.type === 'renew') {
@@ -158,6 +171,18 @@ export function registerAdminPaymentHandler(bot: Telegraf<BotContext>): void {
       where: { id: txnId },
       data: { status: 'rejected', reviewed_by: BigInt(ctx.from!.id) },
     });
+
+    logEvent(
+      'payment.admin_rejected',
+      {
+        txnId: txn.id,
+        transactionUuid: txn.transaction_id,
+        amount: txn.amount,
+        targetChatId: txn.user.chat_id,
+        type: txn.type,
+      },
+      actorFrom(ctx.from),
+    );
 
     const rejectedMsg = await getMessage('payment.rejected');
     await ctx.telegram.sendMessage(txn.user.chat_id.toString(), rejectedMsg);

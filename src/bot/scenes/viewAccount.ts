@@ -7,6 +7,7 @@ import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
 import { formatBytes, formatDaysLeft, buildSubUrl, fetchAndRenameConfigs, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 /** Extract the numeric suffix from dove_123456 */
 function getSuffix(marzbanUsername: string): string {
@@ -164,10 +165,21 @@ viewAccountScene.on('message', async (ctx) => {
   }
 
   const db = getDb();
+  const existing = await db.account.findUnique({ where: { id: accountId } });
   const account = await db.account.update({
     where: { id: accountId },
     data: { display_name: name },
   });
+
+  logEvent(
+    'account.renamed',
+    {
+      marzbanUsername: account.marzban_username,
+      oldName: existing?.display_name ?? null,
+      newName: name,
+    },
+    actorFrom(ctx.from),
+  );
 
   const finalName = getConfigName(account);
 

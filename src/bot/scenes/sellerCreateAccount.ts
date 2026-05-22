@@ -8,6 +8,7 @@ import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
 import { formatPrice, formatBytes, buildSubUrl, fetchAndRenameConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
+import { actorFrom, logEvent } from '../../core/events';
 
 const SELLER_ACCOUNT_DURATION_DAYS = 30;
 
@@ -91,6 +92,32 @@ async function provisionAccount(ctx: BotContext) {
         expires_at: expiresAt,
       },
     });
+
+    logEvent(
+      'seller.account_created',
+      {
+        sellerId,
+        marzbanUsername,
+        planName,
+        dataLimitBytes: dataLimit,
+        price,
+      },
+      actorFrom(ctx.from),
+    );
+    logEvent(
+      'account.created',
+      {
+        marzbanUsername,
+        ownerChatId: seller.chat_id,
+        type: 'paid',
+        dataLimitBytes: dataLimit,
+        durationDays: SELLER_ACCOUNT_DURATION_DAYS,
+        expiresAt,
+        sellerId,
+        planLabel: planName,
+      },
+      actorFrom(ctx.from),
+    );
 
     ctx.session.selectedAccountId = account.id;
     ctx.session.awaitingQuantity = false;
