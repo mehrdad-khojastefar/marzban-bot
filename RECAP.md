@@ -1,22 +1,17 @@
 # Commit Recap
 
 ## What changed
-Switched the admin move-account scene from `request_contact` (which only shares the admin's *own* phone) to `request_users` — a native Telegram user picker — so the admin can pick *any* user as the new owner. The `contact` handler is kept as a graceful fallback for admins who reach for the attachment-menu contact-share path instead of the new picker button. Reply-keyboard exception remains, but the keyboard now carries a `userRequest` button (`user_is_bot: false`, `max_quantity: 1`).
+Call `initSettingService(db)` at the top of `startPremzyServer` so the premzy callback process can read the `events_enabled` setting. Without this, every `logEvent` call inside the premzy server threw `"Setting service not initialized"` inside `getSetting('events_enabled')`, the error was swallowed by the fire-and-forget `.catch` in `logEvent`, and every premzy webhook event was silently dropped.
 
 ## Key decisions
-- **`request_users` over `request_contact`:** `request_contact` was a UX dead-end — Telegram clients interpret it as "share *your* number", not "pick another user". `request_users` opens a proper user picker, which is exactly what the admin needs to nominate a new owner.
-- **Keep `contact` handler as a fallback:** removing it would silently fail for admins who tap "share contact" from the attachment menu out of habit. Both inbound shapes feed the same `handleTargetUserId` lookup pipeline.
-- **`request_id = 1`:** an arbitrary 32-bit constant — there is only one picker per scene so collisions are impossible.
+- **Initialize once at server start, not per request:** the setting service is process-global state, same pattern the bot process uses. Re-initializing per request would invalidate the 30s cache for nothing.
+- **Use the same `db` that the rest of the server already constructed:** premzy already builds a `PrismaClient` for provisioning — reuse it instead of opening a second pool just for settings.
 
 ## Files changed
 ```
-src/bot/scenes/adminMoveAccount.ts          # userRequest keyboard + users_shared handler + shared lookup fn
-src/db/seeds/seed.ts                        # updated 4 admin.move_account_* default messages
-design/bot/scenes/admin_move_account.md     # updated scene spec (picker + contact fallback)
-design/bot/messages.md                      # updated message registry rows
+src/premzy/server.ts    # initSettingService(db) right after PrismaClient construction
 ```
 
 ## Verification
-- `yarn lint`: zero new errors or warnings introduced by this change (pre-existing lint debt elsewhere unchanged).
-- `yarn test`: existing 6 `moveAccount` core tests still pass — the change is purely at the scene-handler layer, core `moveAccountOwnership()` logic is untouched.
-- Type check: `users_shared` + `Markup.button.userRequest` are supported by telegraf 4.16.3 / @telegraf/types.
+- `npx tsc --noEmit -p tsconfig.bot.json`: no new TS errors in `src/premzy/server.ts` (pre-existing errors elsewhere unchanged).
+- The fix is a one-call wiring change; no test changes needed — the setting service already has its own unit coverage.

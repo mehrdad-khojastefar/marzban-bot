@@ -6,6 +6,7 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../core/provision';
 import { formatBytes } from '../core/utils/format';
 import { logEvent, setBotInstance } from '../core/events';
+import { initSettingService } from '../bot/services/settingService';
 
 interface PremzyServerConfig {
   port: number;
@@ -18,6 +19,9 @@ interface PremzyServerConfig {
 export async function startPremzyServer(config: PremzyServerConfig): Promise<http.Server> {
   const adapter = new PrismaPg({ connectionString: config.databaseUrl });
   const db = new PrismaClient({ adapter });
+  // The event logger reads `events_enabled` via getSetting(), which requires
+  // the setting service to be initialized in this process.
+  initSettingService(db);
 
   const telegrafOptions: Partial<Telegraf.Options<any>> = {};
   if (config.socksProxy) {
