@@ -148,19 +148,19 @@ const defaultMessages: { key: string; text: string }[] = [
       '🔄 نقل اکانت به کاربر دیگر\n\n' +
       'اکانت: <code>{username}</code>\n' +
       'مالک فعلی: {currentOwner}\n\n' +
-      'لطفاً مخاطب کاربر جدید را با دکمه‌ی پایین صفحه به اشتراک بگذارید.',
+      'لطفاً کاربر مقصد را با دکمه‌ی پایین صفحه از لیست تلگرام انتخاب کنید.',
   },
   {
     key: 'admin.move_account_send_contact',
-    text: 'برای ادامه، مخاطب کاربر جدید را به اشتراک بگذارید.',
+    text: 'برای ادامه، کاربر مقصد را از لیست تلگرام انتخاب کنید.',
   },
   {
     key: 'admin.move_account_share_contact_button',
-    text: '📱 اشتراک‌گذاری مخاطب کاربر جدید',
+    text: '👤 انتخاب کاربر مقصد',
   },
   {
     key: 'admin.move_account_contact_no_user_id',
-    text: '❌ اطلاعات این مخاطب ناقص است (شناسه تلگرام در دسترس نیست). لطفاً مخاطب دیگری بفرستید.',
+    text: '❌ شناسه تلگرام این کاربر در دسترس نیست. لطفاً کاربر دیگری انتخاب کنید.',
   },
   {
     key: 'admin.move_account_user_not_registered',

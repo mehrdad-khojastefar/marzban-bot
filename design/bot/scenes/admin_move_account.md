@@ -31,25 +31,30 @@ The existing inline message (the account detail) is edited to:
 [ 🔙 انصراف ]
 ```
 
-In addition, a second message is sent with a Telegram **reply** keyboard:
+In addition, a second message is sent with a Telegram **reply** keyboard carrying a `request_users` button:
 ```
-برای ادامه، مخاطب کاربر جدید را به اشتراک بگذارید.
+برای ادامه، کاربر مقصد را از لیست تلگرام انتخاب کنید.
 
 ⌨️ Reply keyboard:
-[ 📱 اشتراک‌گذاری مخاطب کاربر جدید ]   ← request_contact
+[ 👤 انتخاب کاربر مقصد ]   ← request_users (user picker, regular users only, max 1)
 ```
 
-This is the documented exception to the single-message UI rule. The reply-keyboard message is dismissed as soon as a valid contact arrives or the admin cancels (see Notes below).
+This is the documented exception to the single-message UI rule. `request_users` opens a Telegram user picker so the admin can choose *anyone* (not just share their own contact). The reply-keyboard message is dismissed as soon as a valid user arrives or the admin cancels (see Notes below).
 
-### Validation on contact receive
-1. `ctx.message.contact.user_id` must be present. If missing (privacy), show `admin.move_account_contact_no_user_id` and stay in step.
-2. `User` row must exist with `chat_id = contact.user_id`. Otherwise show `admin.move_account_user_not_registered`.
+### Validation on user pick / contact receive
+The scene handles two inbound message shapes:
+- `users_shared` (from the `request_users` picker — primary path): `ctx.message.users_shared.user_ids[0]`.
+- `contact` (fallback if the admin uses the attachment menu → contact share): `ctx.message.contact.user_id`.
+
+Both feed into the same lookup pipeline:
+1. The picked id must be present. If missing (privacy), show `admin.move_account_contact_no_user_id` and stay in step.
+2. `User` row must exist with `chat_id = picked_user_id`. Otherwise show `admin.move_account_user_not_registered`.
 3. `user.status === 'approved'`. Otherwise show `admin.move_account_user_not_approved`.
 4. `user.id !== account.user_id`. Otherwise show `admin.move_account_same_owner`.
 
-In all rejection branches the reply keyboard remains active so the admin can immediately share a different contact.
+In all rejection branches the reply keyboard remains active so the admin can immediately pick a different user.
 
-If the admin sends any text instead of a contact, the bot re-prompts via `admin.move_account_send_contact`.
+If the admin sends any text instead of using the picker, the bot re-prompts via `admin.move_account_send_contact`.
 
 ## UI — Step `confirm`
 ```
@@ -102,7 +107,8 @@ ADMIN_MOVE_ACCOUNT → ADMIN_VIEW_ACCOUNT (cancel, success, or invalid state)
 ```
 
 ## Notes
-- **Reply-keyboard exception:** Telegram's `request_contact` only works on a reply keyboard, not on inline buttons. The scene therefore briefly breaks the project's single-message rule by sending a second message that carries the reply keyboard. As soon as the move is confirmed or cancelled, that message is deleted and a zero-width-space message with `remove_keyboard: true` is sent and immediately deleted to ensure the keyboard is dismissed across all Telegram clients.
+- **Reply-keyboard exception:** Telegram's `request_users` (and `request_contact`) only works on a reply keyboard, not on inline buttons. The scene therefore briefly breaks the project's single-message rule by sending a second message that carries the reply keyboard. As soon as the move is confirmed or cancelled, that message is deleted and a zero-width-space message with `remove_keyboard: true` is sent and immediately deleted to ensure the keyboard is dismissed across all Telegram clients.
+- **`request_users` vs `request_contact`:** the picker (`request_users`) lets the admin choose any Telegram user from their list. `request_contact` only shares the admin's *own* phone number, which is not what we want. The `contact` handler is kept as a graceful fallback for admins who use the attachment menu's contact-share path instead of the picker button.
 - **`seller_id` preserved:** The admin's "move" only changes who *owns* the account, not who *sold* it. This keeps seller reports/commission attribution intact.
 - **Unknown contacts are rejected:** If the shared contact is not yet a registered `User` (status anything) the move is refused. The new owner must `/start` the bot and be approved before they can receive a moved account. This is consistent with the existing approval flow described in `CLAUDE.md`.
 - **No Marzban call:** The `marzban_username` stays the same; the new owner sees this account when they open their accounts list (filtered by `user_id`).

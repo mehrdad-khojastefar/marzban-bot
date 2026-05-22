@@ -192,10 +192,10 @@ Default messages are seeded from the scene design files on first run. See each `
 ### Admin Move Account Ownership Scene
 | Key | Default | Variables |
 |---|---|---|
-| `admin.move_account_prompt` | 🔄 نقل اکانت به کاربر دیگر\n\nاکانت: `{username}`\nمالک فعلی: {currentOwner}\n\nلطفاً مخاطب کاربر جدید را با دکمه‌ی پایین صفحه به اشتراک بگذارید. | username, currentOwner |
-| `admin.move_account_send_contact` | برای ادامه، مخاطب کاربر جدید را به اشتراک بگذارید. | — |
-| `admin.move_account_share_contact_button` | 📱 اشتراک‌گذاری مخاطب کاربر جدید | — |
-| `admin.move_account_contact_no_user_id` | ❌ اطلاعات این مخاطب ناقص است (شناسه تلگرام در دسترس نیست). لطفاً مخاطب دیگری بفرستید. | — |
+| `admin.move_account_prompt` | 🔄 نقل اکانت به کاربر دیگر\n\nاکانت: `{username}`\nمالک فعلی: {currentOwner}\n\nلطفاً کاربر مقصد را با دکمه‌ی پایین صفحه از لیست تلگرام انتخاب کنید. | username, currentOwner |
+| `admin.move_account_send_contact` | برای ادامه، کاربر مقصد را از لیست تلگرام انتخاب کنید. | — |
+| `admin.move_account_share_contact_button` | 👤 انتخاب کاربر مقصد | — |
+| `admin.move_account_contact_no_user_id` | ❌ شناسه تلگرام این کاربر در دسترس نیست. لطفاً کاربر دیگری انتخاب کنید. | — |
 | `admin.move_account_user_not_registered` | ❌ این کاربر هنوز در ربات ثبت‌نام نکرده است. ابتدا باید /start را اجرا کند و توسط ادمین تأیید شود. | — |
 | `admin.move_account_user_not_approved` | ❌ این کاربر هنوز توسط ادمین تأیید نشده است. | — |
 | `admin.move_account_same_owner` | ⚠️ این اکانت در حال حاضر متعلق به همین کاربر است. | — |

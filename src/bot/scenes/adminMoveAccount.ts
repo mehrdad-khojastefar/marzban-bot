@@ -12,6 +12,9 @@ export const adminMoveAccountScene = new Scenes.BaseScene<BotContext>(
   SCENE_ADMIN_MOVE_ACCOUNT,
 );
 
+// Arbitrary 32-bit request_id echoed back inside the users_shared payload.
+const USER_PICK_REQUEST_ID = 1;
+
 function ownerLabel(user: {
   first_name: string;
   last_name: string | null;
@@ -104,24 +107,29 @@ adminMoveAccountScene.enter(async (ctx) => {
   const sent = await ctx.telegram.sendMessage(
     ctx.chat.id,
     await getMessage('admin.move_account_send_contact'),
-    Markup.keyboard([Markup.button.contactRequest(buttonLabel)])
+    Markup.keyboard([
+      Markup.button.userRequest(buttonLabel, USER_PICK_REQUEST_ID, {
+        user_is_bot: false,
+        max_quantity: 1,
+      }),
+    ])
       .oneTime()
       .resize(),
   );
   ctx.session.moveAccountReplyMsgId = sent.message_id;
 });
 
-adminMoveAccountScene.on('contact', async (ctx) => {
-  if (ctx.session.moveAccountStep !== 'wait_contact') return;
-
+async function handleTargetUserId(
+  ctx: BotContext,
+  targetChatId: number,
+): Promise<void> {
   const accountId = ctx.session.selectedAccountId;
   if (!accountId) {
     await backToDetail(ctx);
     return;
   }
 
-  const contactUserId = ctx.message.contact.user_id;
-  if (!contactUserId) {
+  if (!targetChatId) {
     const msg = await getMessage('admin.move_account_contact_no_user_id');
     await sendOrEdit(ctx, msg, cancelKeyboard());
     return;
@@ -138,7 +146,7 @@ adminMoveAccountScene.on('contact', async (ctx) => {
   }
 
   const target = await db.user.findUnique({
-    where: { chat_id: BigInt(contactUserId) },
+    where: { chat_id: BigInt(targetChatId) },
   });
   if (!target) {
     const msg = await getMessage('admin.move_account_user_not_registered');
@@ -178,6 +186,21 @@ adminMoveAccountScene.on('contact', async (ctx) => {
       ],
     ]),
   );
+}
+
+adminMoveAccountScene.on('users_shared', async (ctx) => {
+  if (ctx.session.moveAccountStep !== 'wait_contact') return;
+  const pickedId = ctx.message.users_shared.user_ids[0];
+  await handleTargetUserId(ctx, pickedId ?? 0);
+});
+
+// Fallback: admin shared a phone-book contact via attachment menu instead of
+// using the picker button. Same lookup path — the user must already be
+// registered in our bot.
+adminMoveAccountScene.on('contact', async (ctx) => {
+  if (ctx.session.moveAccountStep !== 'wait_contact') return;
+  const contactUserId = ctx.message.contact.user_id;
+  await handleTargetUserId(ctx, contactUserId ?? 0);
 });
 
 adminMoveAccountScene.on('text', async (ctx) => {

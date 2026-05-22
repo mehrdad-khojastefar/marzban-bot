@@ -1,34 +1,22 @@
 # Commit Recap
 
 ## What changed
-Added a new admin-only scene, `SCENE_ADMIN_MOVE_ACCOUNT`, that transfers ownership of an existing account from its current user to another approved user. Entered from the existing account detail view via a new `🔄 نقل اکانت به کاربر دیگر` button. The new owner is identified by sharing their Telegram contact via the native "share contact" keyboard; the validated move updates only `accounts.user_id` and emits an `admin.account_ownership_moved` event.
+Switched the admin move-account scene from `request_contact` (which only shares the admin's *own* phone) to `request_users` — a native Telegram user picker — so the admin can pick *any* user as the new owner. The `contact` handler is kept as a graceful fallback for admins who reach for the attachment-menu contact-share path instead of the new picker button. Reply-keyboard exception remains, but the keyboard now carries a `userRequest` button (`user_is_bot: false`, `max_quantity: 1`).
 
 ## Key decisions
-- **Entry from account detail, not from a new top-level menu:** an account is selected first (using the existing admin flows), then a new owner is shared via contact — matches the request in `WORKING.md` and reuses existing list/detail UX.
-- **DB-only update, no Marzban call:** Marzban does not track ownership; only `accounts.user_id` changes. `marzban_username`, expiry, plan, etc. are untouched.
-- **`seller_id` preserved:** the Prisma update payload contains only `user_id`. Original seller attribution stays intact so commission/reporting is not disturbed.
-- **Unknown contacts rejected:** if the shared contact's `user_id` doesn't map to a `User`, or the user is not `approved`, the move is refused with a Persian message; the admin can immediately share a different contact without restarting the scene.
-- **Reply-keyboard exception:** Telegram's `request_contact` requires a reply keyboard, not an inline one. The scene sends a second short-lived message carrying the reply keyboard and dismisses it (delete + zero-width-space `remove_keyboard`) as soon as a valid contact arrives or the admin cancels. Documented in `ARCHITECTURE.md`.
+- **`request_users` over `request_contact`:** `request_contact` was a UX dead-end — Telegram clients interpret it as "share *your* number", not "pick another user". `request_users` opens a proper user picker, which is exactly what the admin needs to nominate a new owner.
+- **Keep `contact` handler as a fallback:** removing it would silently fail for admins who tap "share contact" from the attachment menu out of habit. Both inbound shapes feed the same `handleTargetUserId` lookup pipeline.
+- **`request_id = 1`:** an arbitrary 32-bit constant — there is only one picker per scene so collisions are impossible.
 
 ## Files changed
 ```
-src/core/moveAccount.ts                                # NEW: moveAccountOwnership() core fn
-src/core/__tests__/moveAccount.test.ts                 # NEW: 6 unit tests (success + each error branch)
-src/bot/scenes/adminMoveAccount.ts                     # NEW: scene with wait_contact + confirm states
-src/bot/scenes/constants.ts                            # added SCENE_ADMIN_MOVE_ACCOUNT
-src/bot/scenes/index.ts                                # registered adminMoveAccountScene
-src/bot/scenes/adminViewAccount.ts                     # added entry button + action
-src/bot/context.ts                                     # added moveAccount* session fields
-src/core/events/types.ts                               # added AdminAccountOwnershipMovedPayload + map entry
-src/core/events/eventFormat.ts                         # added formatter for admin.account_ownership_moved
-src/db/seeds/seed.ts                                   # 10 new admin.move_account_* messages
-
-design/bot/scenes/admin_move_account.md                # NEW: scene spec
-design/bot/messages.md                                 # registry rows for the new keys
-ARCHITECTURE.md                                        # "Move Account Ownership" decisions section
-WORKING.md                                             # expanded source spec (already updated)
+src/bot/scenes/adminMoveAccount.ts          # userRequest keyboard + users_shared handler + shared lookup fn
+src/db/seeds/seed.ts                        # updated 4 admin.move_account_* default messages
+design/bot/scenes/admin_move_account.md     # updated scene spec (picker + contact fallback)
+design/bot/messages.md                      # updated message registry rows
 ```
 
 ## Verification
 - `yarn lint`: zero new errors or warnings introduced by this change (pre-existing lint debt elsewhere unchanged).
-- `yarn test`: 150/150 pass — including 6 new tests covering the success path (with `seller_id` preserved and the event payload), `account_not_found`, `user_not_found`, `user_not_approved` for both `pending` and `banned`, and `same_owner`.
+- `yarn test`: existing 6 `moveAccount` core tests still pass — the change is purely at the scene-handler layer, core `moveAccountOwnership()` logic is untouched.
+- Type check: `users_shared` + `Markup.button.userRequest` are supported by telegraf 4.16.3 / @telegraf/types.
