@@ -4,6 +4,7 @@ import {
   SCENE_ADMIN_VIEW_ACCOUNT,
   SCENE_ADMIN_SELLER_ACCOUNTS,
   SCENE_ADMIN_ACCOUNTS,
+  SCENE_ADMIN_MOVE_ACCOUNT,
 } from './constants';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
@@ -158,6 +159,7 @@ async function renderDetail(ctx: BotContext) {
         'toggle_payment',
       ),
     ],
+    [Markup.button.callback('🔄 نقل اکانت به کاربر دیگر', 'move_account')],
     [Markup.button.callback('🗑 حذف اکانت', 'delete_account')],
     [Markup.button.callback('🔙 بازگشت', 'back_accounts')],
   ];
@@ -525,6 +527,12 @@ adminViewAccountScene.action('confirm_delete', async (ctx) => {
 
   ctx.session.selectedAccountId = undefined;
   await ctx.scene.enter(SCENE_ADMIN_SELLER_ACCOUNTS);
+});
+
+// --- Move ownership ---
+adminViewAccountScene.action('move_account', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_MOVE_ACCOUNT);
 });
 
 // --- Back ---

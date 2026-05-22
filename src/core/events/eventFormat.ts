@@ -236,6 +236,15 @@ export const formatters: FormatterMap = {
     kv('succeeded', p.succeeded) +
     kv('failed', p.failed),
 
+  'admin.account_ownership_moved': (p, actor, now) =>
+    header('admin.account_ownership_moved', actor, now) +
+    kv('account_id', p.accountId) +
+    kv('marzban_username', p.marzbanUsername) +
+    kv('from_user_id', p.fromUserId) +
+    kv('from_chat_id', String(p.fromChatId)) +
+    kv('to_user_id', p.toUserId) +
+    kv('to_chat_id', String(p.toChatId)),
+
   // ── SELLER ──
   'seller.account_created': (p, actor, now) =>
     header('seller.account_created', actor, now) +

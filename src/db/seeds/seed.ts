@@ -141,6 +141,56 @@ const defaultMessages: { key: string; text: string }[] = [
   { key: 'admin.backup.failed', text: '❌ خطا در تهیه پشتیبان:\n{reason}' },
   { key: 'admin.backup.disabled', text: 'قابلیت پشتیبان‌گیری غیرفعال است.' },
   { key: 'admin.backup.in_progress', text: 'یک پشتیبان‌گیری در حال اجراست. لطفاً صبر کنید.' },
+  // admin move account ownership
+  {
+    key: 'admin.move_account_prompt',
+    text:
+      '🔄 نقل اکانت به کاربر دیگر\n\n' +
+      'اکانت: <code>{username}</code>\n' +
+      'مالک فعلی: {currentOwner}\n\n' +
+      'لطفاً مخاطب کاربر جدید را با دکمه‌ی پایین صفحه به اشتراک بگذارید.',
+  },
+  {
+    key: 'admin.move_account_send_contact',
+    text: 'برای ادامه، مخاطب کاربر جدید را به اشتراک بگذارید.',
+  },
+  {
+    key: 'admin.move_account_share_contact_button',
+    text: '📱 اشتراک‌گذاری مخاطب کاربر جدید',
+  },
+  {
+    key: 'admin.move_account_contact_no_user_id',
+    text: '❌ اطلاعات این مخاطب ناقص است (شناسه تلگرام در دسترس نیست). لطفاً مخاطب دیگری بفرستید.',
+  },
+  {
+    key: 'admin.move_account_user_not_registered',
+    text: '❌ این کاربر هنوز در ربات ثبت‌نام نکرده است. ابتدا باید /start را اجرا کند و توسط ادمین تأیید شود.',
+  },
+  {
+    key: 'admin.move_account_user_not_approved',
+    text: '❌ این کاربر هنوز توسط ادمین تأیید نشده است.',
+  },
+  {
+    key: 'admin.move_account_same_owner',
+    text: '⚠️ این اکانت در حال حاضر متعلق به همین کاربر است.',
+  },
+  {
+    key: 'admin.move_account_confirm',
+    text:
+      '⚠️ تأیید نقل اکانت\n\n' +
+      'اکانت: <code>{username}</code>\n' +
+      'از: {fromName} ({fromChatId})\n' +
+      'به: {toName} ({toChatId})\n\n' +
+      'ادامه دهیم؟',
+  },
+  {
+    key: 'admin.move_account_done',
+    text: '✅ اکانت با موفقیت به {toName} منتقل شد.',
+  },
+  {
+    key: 'admin.move_account_failed',
+    text: '❌ خطا در نقل اکانت. لطفاً دوباره تلاش کنید.',
+  },
 ];
 
 const defaultSettings: { key: string; value: string }[] = [

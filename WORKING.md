@@ -1,229 +1,128 @@
-# BACKUP
+# Move account ownership to another user
 
 ## Goal
 
-Back up the two PostgreSQL databases used by this project — `marzban` (VPN
-panel) and `marzban_bot` (this bot) — on a cron schedule, and post each
-dump to its own dedicated topic inside the existing Telegram log group,
-with metadata (size, sha256, duration, timestamp). The admin can also
-trigger a backup on demand from the admin menu.
+Add a feature that lets the admin transfer ownership of an existing Marzban account from one user to another. The admin selects the target account from the existing admin account detail view, identifies the new owner by sharing that person's Telegram contact via the native "share contact" button, confirms, and the account's `accounts.user_id` is updated.
 
-This is the first background job in the project. No user-facing scene.
+Marzban itself does not model ownership — ownership lives only in our DB. So this is a DB-only state change plus an event-log entry. No Marzban API call is made.
 
----
+## Product decisions (locked)
 
-## Feature Flag
+- **Entry point:** from the admin account detail view (`adminViewAccount`). A new button is added below the existing edit/delete controls.
+- **Unknown contact:** if the shared contact's Telegram user is not yet a registered user in our `users` table, the move is rejected. Admin is told the user must `/start` the bot and be approved first. Admin can immediately share another contact without restarting the flow.
+- **`seller_id` rule:** preserved — only `user_id` is updated. The original seller keeps their attribution.
+- **Permission:** only the admin (`ADMIN_CHAT_ID`) can use this feature, enforced the same way as every other admin scene.
 
-`backup_enabled` (BotSetting) — `"true"` / `"false"`, default `"false"`.
+## UX flow
 
-- When `"false"`: cron is not scheduled, the admin "Backup now" button
-  short-circuits with a Persian "feature disabled" reply. Toggling to
-  `"true"` reschedules without a restart.
-- Matches the precedent of `events_enabled`, `buy_enabled`, etc.
+1. Admin is already inside `adminViewAccount` for some account (reached via the existing admin accounts list or seller accounts list).
+2. Admin taps the new button `🔄 نقل اکانت به کاربر دیگر`.
+3. Bot edits the same message (single-message rule) to a prompt naming the account + current owner, with an inline `🔙 انصراف` button.
+4. Bot also sends a short follow-up message with a *reply* keyboard containing a single `request_contact` button (this is the documented exception to the single-message rule — Telegram only allows contact-sharing from a reply keyboard).
+5. Admin shares a contact:
+   - If `contact.user_id` is missing (privacy setting) → show error key, stay in step.
+   - If no `User` row with `chat_id = contact.user_id` → show "user not registered" key, stay in step.
+   - If `user.status !== 'approved'` → show "user not approved" key, stay in step.
+   - If `user.id === account.user_id` → show "same owner" key, stay in step.
+   - Otherwise → remove the reply keyboard, transition to `confirm`.
+6. Confirmation message: account username, current owner (name + chat_id), new owner (name + chat_id), with `[✅ بله، نقل بده]` and `[🔙 انصراف]`.
+7. Confirm → DB update + event log → success message → return to `adminViewAccount` (which re-renders with the new owner).
+8. Cancel from any step → reply keyboard removed, session keys cleared, return to `adminViewAccount`.
 
----
+## Implementation
 
-## Schedule
+### New files
+- `src/bot/scenes/adminMoveAccount.ts` — scene handler. Pattern after `src/bot/scenes/adminBankCards.ts` (small admin scene with a clear step enum).
+- `src/core/moveAccount.ts` — exported function `moveAccountOwnership({ accountId, newUserId, actor })`. Does validation + the Prisma update + `logEvent('admin.account_ownership_moved', ...)`. Kept in core per CLAUDE.md's `src/core/ → src/bot/` order rule.
+- `src/__tests__/core/moveAccount.test.ts` — unit tests against mocked Prisma covering: success path, `seller_id` preserved, unknown user, same-user, banned/pending user.
+- `design/bot/scenes/admin_move_account.md` — scene spec following the same structure as `design/bot/scenes/admin_bank_cards.md` and `design/bot/scenes/admin_group_modify.md`.
 
-`backup_cron` (BotSetting) — cron expression, default `"0 3 * * *"`
-(03:00 server time, daily).
+### Modifications
+- `src/bot/scenes/constants.ts` — add `export const SCENE_ADMIN_MOVE_ACCOUNT = 'scene:admin_move_account';`.
+- `src/bot/scenes/index.ts` — import `adminMoveAccountScene`, add to `createStage()`, re-export the constant.
+- `src/bot/scenes/adminViewAccount.ts` — insert a new keyboard row at line ~149 (just before the back row):
+  - `Markup.button.callback('🔄 نقل اکانت به کاربر دیگر', 'move_account')`
+  - Add `adminViewAccountScene.action('move_account', ...)` that calls `ctx.scene.enter(SCENE_ADMIN_MOVE_ACCOUNT)` — the new scene reads `ctx.session.selectedAccountId` directly, same pattern as the existing edit actions.
+- `src/bot/context.ts` — extend `SessionData` with:
+  - `moveAccountStep?: 'wait_contact' | 'confirm';`
+  - `moveAccountTargetUserId?: number;`
+  - `moveAccountReplyMsgId?: number;` — id of the throwaway reply-keyboard message so it can be cleared on transition/cancel.
+- `design/bot/messages.md` and the `bot_messages` seed — add the keys listed below.
 
-- Parsed with `node-cron`'s validator at scheduler start and on every
-  BotSetting write.
-- Invalid expression → emit `error.backup_misconfigured`, fall back to
-  the default `"0 3 * * *"` and keep running.
-- Changing `backup_cron` via the BotSetting calls
-  `backupScheduler.reschedule()` — no restart needed.
+### Core function shape
 
----
+```ts
+// src/core/moveAccount.ts
+export type MoveAccountError =
+  | 'account_not_found'
+  | 'user_not_found'
+  | 'user_not_approved'
+  | 'same_owner';
 
-## New Env Vars
-
-Added to `src/core/utils/config.ts` (Zod `envSchema`) AND
-`.env.example`:
-
-| Var | Required | Purpose |
-|---|---|---|
-| `MARZBAN_DATABASE_URL` | yes | Connection string for the Marzban Postgres instance — `pg_dump` only, never wired to Prisma. |
-| `LOG_TOPIC_BACKUP_MARZBAN` | yes (int) | `message_thread_id` for the marzban-DB backup topic in `LOG_GROUP_ID`. |
-| `LOG_TOPIC_BACKUP_BOT` | yes (int) | `message_thread_id` for the marzban_bot-DB backup topic in `LOG_GROUP_ID`. |
-
-`LOG_GROUP_ID` is the **existing** event-logger group — backups reuse
-it. No new group is introduced.
-
----
-
-## Pipeline (runs once per DB, sequentially)
-
-For each DB (`marzban`, then `marzban_bot`):
-
-1. Build a tmp path: `/tmp/<db>-<YYYYMMDD-HHmmss>.sql.gz`.
-2. `child_process.spawn('pg_dump', ['--no-owner', '--no-privileges',
-   '--clean', '--if-exists', connStr])`.
-3. Pipe `stdout` → `zlib.createGzip()` → file write stream.
-4. Tee the gzipped bytes through `crypto.createHash('sha256')` to
-   compute the digest while streaming. Capture stderr to a string
-   (last ~2 KB).
-5. On `pg_dump` exit code `0`: `fs.stat` for size, send to Telegram
-   (see Caption + Upload), then `fs.unlink` the tmp file.
-6. On non-zero exit or any stream error: emit `error.backup_failed`
-   with the stderr tail, `fs.unlink` any partial tmp file, move on
-   to the next DB. **No in-run retry** — the next cron tick is the
-   retry.
-
----
-
-## Telegram Caption + Upload
-
-Sent via `bot.telegram.sendDocument(env.LOG_GROUP_ID, { source:
-fs.createReadStream(filePath), filename }, { message_thread_id,
-caption, parse_mode: 'HTML' })`.
-
-- `message_thread_id` is `LOG_TOPIC_BACKUP_MARZBAN` or
-  `LOG_TOPIC_BACKUP_BOT` depending on the DB.
-- Caption (HTML, admin-internal, lives inline in
-  `src/core/events/eventFormat.ts`-style helper — NOT in
-  `bot_messages`):
-
-```
-<b>🗄 backup · marzban</b>
-date: 2026-05-23 03:00:14 UTC
-size: 84.3 MB
-sha256: <code>a1b2c3d4…</code>
-duration: 7.4 s
+export async function moveAccountOwnership(args: {
+  accountId: number;
+  newUserId: number;
+  actor: Actor;
+}): Promise<{ ok: true; account: Account } | { ok: false; error: MoveAccountError }>;
 ```
 
-`size` formatted human-readable, `sha256` truncated to first 16 chars
-in the caption (full hash logged via event payload).
+- Single `db.account.update({ where: { id }, data: { user_id: newUserId } })`. `seller_id` is intentionally absent from the `data` payload so it is preserved.
+- All validation happens here too (account exists, target user exists + is approved, not same owner) so the scene can stay thin and the tests can cover edge cases without touching Telegram.
+- On success calls `logEvent('admin.account_ownership_moved', { accountId, marzbanUsername, fromUserId, toUserId }, actor)` — mirrors `admin.account_deleted` event in `adminViewAccount.ts:515-524`.
 
----
+### Reused utilities (do not reimplement)
+- `sendOrEdit` — `src/bot/services/renderService.ts:12`.
+- `logEvent`, `actorFrom` — `src/core/events.ts`.
+- `getDb` — `src/core/db.ts`.
+- Persian message lookup via `getMessage()` from `src/bot/services/messageService.ts`.
+- `getBackScene(ctx)` helper from `adminViewAccount.ts:24-28` — copy the same pattern so cancel returns to the list the admin came from.
 
-## Concurrency
+## New `bot_messages` keys
 
-- The two DBs back up **sequentially** inside one scheduled run (less
-  load on the box, one Telegram upload at a time).
-- Two scheduled runs cannot overlap: the runner holds an in-process
-  `isRunning: boolean` flag. If a cron tick fires while the previous
-  run is still going, the new tick is dropped and
-  `system.backup_skipped` is emitted.
-- Manual trigger respects the same flag — admin gets "in progress"
-  Persian reply if a run is mid-flight.
+Seeded via the same mechanism as the existing keys (see `design/bot/messages.md`). Persian text, with `{placeholders}` interpolated at render time.
 
----
+| Key | Text |
+|---|---|
+| `admin.move_account_prompt` | `🔄 نقل اکانت\n\nاکانت: \`{username}\`\nمالک فعلی: {currentOwner}\n\nلطفاً مخاطب کاربر جدید را با دکمه پایین به اشتراک بگذارید.` |
+| `admin.move_account_send_contact` | `برای ادامه، مخاطب کاربر جدید را به اشتراک بگذارید.` |
+| `admin.move_account_contact_no_user_id` | `اطلاعات این مخاطب ناقص است (شناسه تلگرام موجود نیست). لطفاً مخاطب دیگری ارسال کنید.` |
+| `admin.move_account_user_not_registered` | `این کاربر هنوز در ربات ثبت‌نام نکرده است. ابتدا باید /start را اجرا کند و توسط ادمین تأیید شود.` |
+| `admin.move_account_user_not_approved` | `این کاربر هنوز توسط ادمین تأیید نشده است.` |
+| `admin.move_account_same_owner` | `این اکانت در حال حاضر متعلق به همین کاربر است.` |
+| `admin.move_account_confirm` | `⚠️ تأیید نقل اکانت\n\nاکانت: \`{username}\`\nاز: {fromName} ({fromChatId})\nبه: {toName} ({toChatId})\n\nادامه دهیم؟` |
+| `admin.move_account_done` | `✅ اکانت با موفقیت به {toName} منتقل شد.` |
+| `admin.move_account_failed` | `❌ خطا در نقل اکانت. لطفاً دوباره تلاش کنید.` |
+| `admin.move_account_share_contact_button` | `📱 اشتراک‌گذاری مخاطب کاربر جدید` |
 
-## Manual Trigger (admin)
+## Edge cases to handle
 
-- Add `🗄 پشتیبان‌گیری فوری` button to the admin root scene
-  (`src/bot/scenes/admin/index.ts` pattern).
-- Handler: gated by `backup_enabled === "true"`. Calls the same
-  runner used by cron with `{ trigger: 'manual' }`. Replies inline
-  via `ctx.editMessageText(...)` (single-message UI):
-  - while running: `admin.backup.running`
-  - on success: `admin.backup.done`
-  - on failure: `admin.backup.failed` with `{reason}` substituted.
+- **Contact with no `user_id`:** Telegram returns `contact.user_id = undefined` when the contact has hidden their Telegram account from contact-sharing. Treat as the "missing id" branch above — do not silently fall back to phone-number lookup.
+- **Account deleted between steps:** if `moveAccountOwnership` finds no account, return `account_not_found`, render the failure key, and bounce back to the accounts list (via `getBackScene`).
+- **Admin shares their own contact:** falls through the same-owner branch if admin already owns the account; otherwise it's allowed (admin can become the owner — `seller_id` still preserved).
+- **Reply keyboard left dangling on crash:** the cancel/confirm/success paths must always remove the reply keyboard (`Markup.removeKeyboard()` on a tiny "..." message, then delete it, OR `ctx.telegram.deleteMessage` on the stored `moveAccountReplyMsgId`). Test both transitions.
+- **`ctx.session.selectedAccountId` missing on scene enter:** redirect to `getBackScene(ctx)` immediately, the same defensive check `adminViewAccount.ts:36-39` performs.
 
----
+## Verification
 
-## Event Tracking (mandatory per CLAUDE.md)
+1. `yarn lint` — zero errors.
+2. `yarn test` — zero failures, including the new `src/__tests__/core/moveAccount.test.ts` covering each `MoveAccountError` branch and the success path.
+3. Manual end-to-end against a local DB + test bot:
+   - As `ADMIN_CHAT_ID`, open any account's detail view → confirm the new button appears.
+   - Tap it → expect the prompt message + reply-keyboard button at the bottom.
+   - Share a contact for an approved `User` → confirmation step → confirm → success.
+   - Re-open the same account: new owner shown. `select user_id, seller_id from accounts where id = ?` in psql confirms `user_id` changed and `seller_id` is unchanged.
+   - Share a contact for an unregistered Telegram user → rejection message; reply keyboard still active; admin can immediately share another contact.
+   - Share a contact for a `pending` or `banned` user → rejection message.
+   - Share own contact when admin already owns the account → "same owner" message.
+   - Cancel from `wait_contact` and from `confirm` → returns to detail view with no stray reply keyboard.
+4. Confirm the events forum supergroup receives an `admin.account_ownership_moved` event with the expected `{ accountId, marzbanUsername, fromUserId, toUserId }` payload.
 
-Added to `src/core/events/types.ts` `EventPayloadMap` and formatted in
-`src/core/events/eventFormat.ts`:
+## Definition of done
 
-| Type | Payload | Routed to |
-|---|---|---|
-| `system.backup_started` | `{ source: 'cron' \| 'manual', dbs: string[] }` | `LOG_TOPIC_SYSTEM` |
-| `system.backup_completed` | `{ db, size_bytes, sha256, duration_ms, trigger }` (one per DB) | `LOG_TOPIC_SYSTEM` |
-| `system.backup_skipped` | `{ reason: 'already_running' \| 'feature_disabled' }` | `LOG_TOPIC_SYSTEM` |
-| `error.backup_failed` | `{ db, stage: 'pg_dump' \| 'gzip' \| 'upload', message, trigger }` | `LOG_TOPIC_ERRORS` |
-| `error.backup_misconfigured` | `{ key: 'backup_cron', value, reason }` | `LOG_TOPIC_ERRORS` |
-
-`logEvent(...)` is fire-and-forget — never wrap in try/catch. The
-backup *document* itself is sent via `sendDocument` directly (not
-through `logEvent`), to the two new dedicated backup topics.
-
----
-
-## New Bot Messages (`bot_messages` rows + `design/bot/messages.md`)
-
-| Key | Persian | Variables |
-|---|---|---|
-| `admin.backup.button` | `🗄 پشتیبان‌گیری فوری` | — |
-| `admin.backup.running` | `در حال تهیه پشتیبان…` | — |
-| `admin.backup.done` | `پشتیبان با موفقیت ارسال شد.` | — |
-| `admin.backup.failed` | `خطا در تهیه پشتیبان: {reason}` | `reason` |
-| `admin.backup.disabled` | `قابلیت پشتیبان‌گیری غیرفعال است.` | — |
-| `admin.backup.in_progress` | `یک پشتیبان‌گیری در حال اجراست. لطفاً صبر کنید.` | — |
-
-Add to `src/db/seeds/seed.ts` and `design/bot/messages.md`.
-
----
-
-## New BotSettings (`bot_settings` rows)
-
-Seeded in `src/db/seeds/seed.ts`:
-
-| Key | Default | Purpose |
-|---|---|---|
-| `backup_enabled` | `"false"` | Master on/off. |
-| `backup_cron` | `"0 3 * * *"` | Cron expression. |
-
----
-
-## Implementation Order
-
-1. `src/core/backup/dump.ts` — `runDump(connStr, outPath): Promise<{
-   sizeBytes, sha256, durationMs }>`. Pure pipeline: spawn pg_dump,
-   pipe through gzip + sha256, write to file. Mockable spawner for
-   unit tests.
-2. `src/core/backup/uploader.ts` — `sendBackupToTelegram(bot, { db,
-   filePath, meta, topicId })`. Builds HTML caption, calls
-   `sendDocument`.
-3. `src/core/backup/runner.ts` — orchestrates both DBs sequentially,
-   holds the `isRunning` lock, emits all events, unlinks tmp files
-   in `finally`. Exports `runBackups(bot, trigger: 'cron' | 'manual')`.
-4. `src/core/backup/scheduler.ts` — wraps `node-cron`. Reads
-   `backup_cron` + `backup_enabled` from settings. Exposes
-   `start(bot)`, `stop()`, `reschedule()`. Call `reschedule()` from
-   any code path that updates the two settings (so settings service
-   invalidation + scheduler.reschedule fire together).
-5. `src/bot/scenes/admin/backupTrigger.ts` — admin button + handler.
-6. `src/bot/scenes/admin/index.ts` — wire the new button into the
-   admin root menu.
-7. `src/db/seeds/seed.ts` — seed the 2 settings + 6 bot_messages.
-8. `src/bot/main.ts` — `await backupScheduler.start(bot)` after
-   `bot.launch()`; `backupScheduler.stop()` in the shutdown hook
-   alongside the existing teardown.
-9. `src/core/utils/config.ts` + `.env.example` — add the 3 new env
-   vars.
-10. `Dockerfile` — append `RUN apk add --no-cache postgresql16-client`
-    to the final stage (the `node:24-alpine` non-root image).
-11. `package.json` — add `node-cron` (runtime) and `@types/node-cron`
-    (dev).
-12. Tests under `src/tests/core/backup/` mirroring sources. Mock
-    `child_process.spawn` and `bot.telegram.sendDocument`. Cover:
-    happy path (both DBs), pg_dump non-zero exit, upload failure,
-    overlap-skipped, invalid cron fallback.
-13. `design/bot/jobs/backup.md` — first background-job spec, mirrors
-    the section structure of this WORKING.md (no Trigger/Keyboards
-    since it's not a scene).
-
----
-
-## Done When
-
-- [ ] All five event types wired (`types.ts` + `eventFormat.ts` +
-      `logEvent` calls at every inflection point in the runner).
-- [ ] Two new BotSettings + six new bot_messages seeded.
-- [ ] Three new env vars validated by Zod at boot.
-- [ ] `Dockerfile` ships with `postgresql16-client`.
-- [ ] Manual trigger button visible in the admin root menu when
-      `backup_enabled = "true"`.
-- [ ] Scheduler starts/stops cleanly with the bot lifecycle.
-- [ ] `yarn lint` clean, `yarn test` green (unit tests cover the
-      runner's success + failure + skip paths).
-- [ ] `ARCHITECTURE.md` gains a "Database Backup" section:
-      BotSetting-tunable cron, pg_dump | gzip | sha256 shape,
-      sequential DB runs, `isRunning` lock, postgresql16-client in
-      Docker, no local retention.
-- [ ] `RECAP.md` written.
-- [ ] Commit: `feat(bot): scheduled DB backup to Telegram`.
+- [ ] All files in "New files" exist and follow project conventions (TypeScript, named exports, absolute imports via `@/`).
+- [ ] All modifications listed above are applied.
+- [ ] `yarn lint` and `yarn test` are green.
+- [ ] `design/bot/scenes/admin_move_account.md` matches the implemented behaviour.
+- [ ] `ARCHITECTURE.md` notes the deliberate reply-keyboard exception to the single-message rule (if not already covered there).
+- [ ] `RECAP.md` summarizes the change.
+- [ ] Commit follows `feat(bot): …` format with `bot` scope.

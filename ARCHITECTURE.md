@@ -81,3 +81,17 @@ The final stage of `Dockerfile` (`node:24-alpine`, non-root `doves`) installs `p
 ### Invalid cron is recoverable, not fatal
 If `backup_cron` parses as invalid, the scheduler emits `error.backup_misconfigured`, falls back to `DEFAULT_CRON` (`0 3 * * *`), and keeps running. Silent total stoppage would be worse than running on an unexpected schedule — the misconfigured event tells the admin to fix it.
 
+## Move Account Ownership — Architecture Decisions
+
+### DB-only state change
+`accounts.user_id` is the only field that moves; Marzban itself does not model account ownership (it only knows the Marzban username). No Marzban API call is made when ownership transfers. `marzban_username`, `marzban_sub_token`, plan, expiry, and balance stay exactly as they were.
+
+### `seller_id` is preserved on move
+The `data` payload of the Prisma update intentionally contains only `user_id`. The original seller's attribution is left in place so seller reports/commission tracking keep working after an admin re-homes an account.
+
+### Unknown contacts are rejected, not auto-created
+If the contact the admin shares is not yet a registered `User`, the move is refused. This is consistent with the existing approval flow (a user must `/start`, become `pending`, and be approved before they can interact with the bot at all). Silently creating a user on ownership transfer would bypass that gate.
+
+### Reply-keyboard exception to the single-message UI rule
+Telegram's `request_contact` is only available on reply keyboards, not inline keyboards. The scene therefore briefly sends a second message that carries the reply keyboard, then dismisses it (via `delete_message` + a zero-width-space `remove_keyboard` message) the moment a valid contact arrives or the admin cancels. This is the same kind of carve-out the project already makes for config/subscription links.
+

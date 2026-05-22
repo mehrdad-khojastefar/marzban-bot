@@ -82,6 +82,11 @@ export interface SessionData extends Scenes.SceneSessionData {
   groupModifyFailedReport?: string;
   groupModifyFailedIds?: number[];
   groupModifySummaryReport?: string;
+
+  // admin move account ownership
+  moveAccountStep?: 'wait_contact' | 'confirm';
+  moveAccountTargetUserId?: number;
+  moveAccountReplyMsgId?: number;
 }
 
 export interface BotContext extends Context {

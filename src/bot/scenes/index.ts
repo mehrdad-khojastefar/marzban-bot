@@ -25,6 +25,7 @@ import { adminBankCardsScene } from './adminBankCards';
 import { adminUsersScene } from './adminUsers';
 import { adminPlanGroupsScene } from './adminPlanGroups';
 import { adminGroupModifyScene } from './adminGroupModify';
+import { adminMoveAccountScene } from './adminMoveAccount';
 
 export {
   SCENE_START,
@@ -52,6 +53,7 @@ export {
   SCENE_ADMIN_USERS,
   SCENE_ADMIN_PLAN_GROUPS,
   SCENE_ADMIN_GROUP_MODIFY,
+  SCENE_ADMIN_MOVE_ACCOUNT,
 } from './constants';
 
 export function createStage(): Scenes.Stage<BotContext> {
@@ -81,5 +83,6 @@ export function createStage(): Scenes.Stage<BotContext> {
     adminUsersScene,
     adminPlanGroupsScene,
     adminGroupModifyScene,
+    adminMoveAccountScene,
   ]);
 }

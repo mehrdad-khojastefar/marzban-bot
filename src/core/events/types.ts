@@ -136,6 +136,15 @@ export interface AdminGroupModifyRetryPayload {
   failed: number;
 }
 
+export interface AdminAccountOwnershipMovedPayload {
+  accountId: number;
+  marzbanUsername: string;
+  fromUserId: number;
+  fromChatId: bigint | number;
+  toUserId: number;
+  toChatId: bigint | number;
+}
+
 export interface SellerAccountCreatedPayload {
   sellerId: number;
   marzbanUsername: string;
@@ -325,6 +334,7 @@ export type EventPayloadMap = {
   'admin.group_modify_resolved': AdminGroupModifyResolvedPayload;
   'admin.group_modify_applied': AdminGroupModifyAppliedPayload;
   'admin.group_modify_retry': AdminGroupModifyRetryPayload;
+  'admin.account_ownership_moved': AdminAccountOwnershipMovedPayload;
 
   'seller.account_created': SellerAccountCreatedPayload;
   'seller.account_deleted': SellerAccountDeletedPayload;
