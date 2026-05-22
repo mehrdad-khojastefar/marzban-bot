@@ -26,3 +26,4 @@ export const SCENE_ADMIN_ACCOUNTS = 'scene:admin_accounts';
 export const SCENE_ADMIN_BANK_CARDS = 'scene:admin_bank_cards';
 export const SCENE_ADMIN_USERS = 'scene:admin_users';
 export const SCENE_ADMIN_PLAN_GROUPS = 'scene:admin_plan_groups';
+export const SCENE_ADMIN_GROUP_MODIFY = 'scene:admin_group_modify';

@@ -55,6 +55,33 @@ export interface SessionData extends Scenes.SceneSessionData {
   selectedAccountIds?: number[];
   currentPage?: number;
   searchQuery?: string;
+
+  // admin group modifications
+  groupModifyStep?:
+    | 'pick_filter'
+    | 'enter_prefix'
+    | 'pick_seller'
+    | 'enter_user_chat_id'
+    | 'preview'
+    | 'build_queue'
+    | 'enter_gb'
+    | 'enter_days'
+    | 'confirm'
+    | 'report';
+  groupModifyFilterKind?: 'prefix' | 'seller' | 'user';
+  groupModifyFilterPrefix?: string;
+  groupModifyFilterSellerId?: number;
+  groupModifyFilterUserChatId?: string;
+  groupModifyMatchedIds?: number[];
+  groupModifySelectedIds?: number[];
+  groupModifyPage?: number;
+  groupModifyAddGb?: number;
+  groupModifyAddDays?: number;
+  groupModifyStatus?: 'active' | 'disabled';
+  groupModifyResetTraffic?: boolean;
+  groupModifyFailedReport?: string;
+  groupModifyFailedIds?: number[];
+  groupModifySummaryReport?: string;
 }
 
 export interface BotContext extends Context {

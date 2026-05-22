@@ -13,6 +13,7 @@ import {
   SCENE_ADMIN_BANK_CARDS,
   SCENE_ADMIN_USERS,
   SCENE_ADMIN_PLAN_GROUPS,
+  SCENE_ADMIN_GROUP_MODIFY,
 } from './constants';
 import { getMessage } from '../services/messageService';
 import { getSetting } from '../services/settingService';
@@ -48,6 +49,7 @@ homeScene.enter(async (ctx) => {
         [Markup.button.callback('💳 مدیریت کارت‌ها', 'admin_bank_cards')],
         [Markup.button.callback('👤 مدیریت کاربران', 'admin_users')],
         [Markup.button.callback('📦 مدیریت پلن‌گروپ‌ها', 'admin_plan_groups')],
+        [Markup.button.callback('✏️ ویرایش گروهی اکانت‌ها', 'admin_group_modify')],
       ]),
     );
     return;
@@ -153,4 +155,9 @@ homeScene.action('admin_users', async (ctx) => {
 homeScene.action('admin_plan_groups', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.scene.enter(SCENE_ADMIN_PLAN_GROUPS);
+});
+
+homeScene.action('admin_group_modify', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.scene.enter(SCENE_ADMIN_GROUP_MODIFY);
 });
