@@ -32,6 +32,9 @@ export const envSchema = z.object({
 
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
+
+  // Admin: how many Marzban modify calls to run in parallel during a group-modify batch.
+  GROUP_MODIFY_CONCURRENCY: z.string().default('8'),
 });
 
 export type Env = z.infer<typeof envSchema>;

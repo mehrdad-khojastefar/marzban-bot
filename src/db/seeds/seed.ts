@@ -115,6 +115,25 @@ const defaultMessages: { key: string; text: string }[] = [
   { key: 'admin.user_card_updated', text: '✅ کارت بانکی کاربر تغییر کرد.' },
   { key: 'admin.no_active_cards', text: '❌ کارت بانکی فعالی وجود ندارد. ابتدا یک کارت اضافه کنید.' },
   { key: 'admin.no_users', text: 'هنوز کاربری اضافه نشده.' },
+  // admin group modify
+  { key: 'admin.group_modify.title', text: '✏️ ویرایش گروهی اکانت‌ها' },
+  { key: 'admin.group_modify.pick_filter', text: 'چگونه اکانت‌ها را انتخاب می‌کنید؟' },
+  { key: 'admin.group_modify.pick_seller_title', text: 'فروشنده مورد نظر را انتخاب کنید:' },
+  { key: 'admin.group_modify.enter_prefix', text: 'پیشوند یوزرنیم را وارد کنید (مثلاً PRO_):' },
+  { key: 'admin.group_modify.enter_user_chat_id', text: 'چت آیدی کاربر را وارد کنید:' },
+  { key: 'admin.group_modify.invalid_chat_id', text: '❌ چت آیدی نامعتبر است. فقط عدد وارد کنید.' },
+  { key: 'admin.group_modify.no_matches', text: '🔍 هیچ اکانتی با این فیلتر پیدا نشد.' },
+  { key: 'admin.group_modify.preview_title', text: '🎯 {selected} از {matched} اکانت انتخاب شده.\n\nبا تیک کنار هر اکانت، آن را در/خارج از این عملیات قرار دهید.' },
+  { key: 'admin.group_modify.queue_title', text: '🎯 هدف: {count} اکانت\n\n📝 عملیات‌های در صف:' },
+  { key: 'admin.group_modify.queue_empty', text: '— هنوز عملیاتی اضافه نکرده‌اید —' },
+  { key: 'admin.group_modify.enter_gb', text: 'تغییر حجم به گیگابایت را وارد کنید (مثبت = افزایش، منفی = کاهش):' },
+  { key: 'admin.group_modify.enter_days', text: 'تغییر زمان به روز را وارد کنید (مثبت = افزایش، منفی = کاهش):' },
+  { key: 'admin.group_modify.invalid_number', text: '❌ عدد معتبر وارد کنید.' },
+  { key: 'admin.group_modify.confirm', text: '⚠️ آیا از اعمال {ops_count} تغییر روی {accounts_count} اکانت مطمئن هستید؟\n\nاین عملیات قابل بازگشت نیست.' },
+  { key: 'admin.group_modify.applying', text: '⏳ در حال اعمال تغییرات...\n\n{done} / {total}' },
+  { key: 'admin.group_modify.report', text: '🏁 گزارش نهایی:\n\n✅ موفق: {ok}\n❌ ناموفق: {fail}' },
+  { key: 'admin.group_modify.report_detail_title', text: '📋 جزئیات اکانت‌های ناموفق:' },
+  { key: 'admin.group_modify.summary_title', text: '📊 خلاصه تغییرات اکانت‌ها:' },
 ];
 
 const defaultSettings: { key: string; value: string }[] = [
