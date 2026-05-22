@@ -7,3 +7,25 @@ coverage/
 *.log
 .DS_Store
 prisma/dev.db
+
+# Local secrets — never commit
+keys/
+
+# Claude sandbox / local dev tooling
+.resume
+Dockerfile.claude
+run-sandbox.sh
+
+# Deferred panel symlink
+src/app
+
+# Sibling experiment worktrees accidentally nested in this repo
+/account_search/
+/announcements/
+/event-tracking/
+/group-modifications/
+/nowpayment/
+/premzy-payment-link-script/
+/renew/
+/speed-improvements/
+/user-notifications/
