@@ -56,6 +56,19 @@ explicitly says otherwise.
   Exception: config/subscription links sent separately for copying.
 - **Scenes:** Every scene must match its spec in `design/bot/scenes/*.md`.
   Read the spec before writing any handler.
+- **Event tracking (mandatory):** Every new feature MUST emit events via
+  `logEvent(...)` from `src/core/events`. This is non-negotiable.
+  - Define a payload interface + add to `EventPayloadMap` in
+    `src/core/events/types.ts`.
+  - Add an HTML formatter in `src/core/events/eventFormat.ts`.
+  - Call `logEvent(type, payload, actorFrom(ctx.from))` at every meaningful
+    inflection point: state transitions, user-triggered mutations, batch
+    completions, and any caught error path that the admin should see.
+  - Use the right category prefix: `user.*`, `admin.*`, `seller.*`,
+    `payment.*`, `account.*`, `error.*`, `system.*`.
+  - `logEvent` is fire-and-forget and never throws — call it freely; never
+    wrap it in try/catch.
+  - A feature is NOT done until its events are tracked.
 
 ---
 
@@ -239,6 +252,7 @@ PREMZY_CALLBACK_PORT=8086
 ## What "Done" Means
 A feature is done when:
 - [ ] All scene specs are implemented
+- [ ] Event tracking is wired (types + formatter + `logEvent` calls)
 - [ ] `yarn lint` passes with zero errors
 - [ ] `yarn test` passes with zero failures
 - [ ] `ARCHITECTURE.md` is updated with any new decisions

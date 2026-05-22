@@ -206,6 +206,36 @@ export const formatters: FormatterMap = {
     kv('marzban_username', p.marzbanUsername) +
     kv('account_id', p.accountId),
 
+  'admin.group_modify_resolved': (p, actor, now) =>
+    header('admin.group_modify_resolved', actor, now) +
+    kv('filter_kind', p.filterKind) +
+    kv('filter_value', p.filterValue) +
+    kv('matched_count', p.matchedCount),
+
+  'admin.group_modify_applied': (p, actor, now) => {
+    const ops: string[] = [];
+    if (p.addGb !== undefined) ops.push(`gb=${p.addGb > 0 ? '+' : ''}${String(p.addGb)}`);
+    if (p.addDays !== undefined)
+      ops.push(`days=${p.addDays > 0 ? '+' : ''}${String(p.addDays)}`);
+    if (p.status !== undefined) ops.push(`status=${p.status}`);
+    if (p.resetTraffic) ops.push('reset_traffic');
+    return (
+      header('admin.group_modify_applied', actor, now) +
+      kv('filter_kind', p.filterKind) +
+      kv('filter_value', p.filterValue) +
+      kv('selected_count', p.selectedCount) +
+      kv('succeeded', p.succeeded) +
+      kv('failed', p.failed) +
+      kv('ops', ops.length > 0 ? ops.join(', ') : '—')
+    );
+  },
+
+  'admin.group_modify_retry': (p, actor, now) =>
+    header('admin.group_modify_retry', actor, now) +
+    kv('failed_count', p.failedCount) +
+    kv('succeeded', p.succeeded) +
+    kv('failed', p.failed),
+
   // ── SELLER ──
   'seller.account_created': (p, actor, now) =>
     header('seller.account_created', actor, now) +

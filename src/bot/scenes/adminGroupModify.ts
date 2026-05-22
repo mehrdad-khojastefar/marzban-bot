@@ -15,6 +15,8 @@ import {
   type Modifications,
   type AccountResult,
 } from '../../core/groupModify';
+import { actorFrom, logEvent } from '../../core/events';
+import type { GroupModifyFilterKind } from '../../core/events';
 
 const PAGE_SIZE = 8;
 const PROGRESS_EVERY = 5;
@@ -75,6 +77,29 @@ function modCount(mods: Modifications): number {
   if (mods.status !== undefined) n++;
   if (mods.resetTraffic) n++;
   return n;
+}
+
+function selectorToTracking(
+  selector: GroupSelector,
+): { kind: GroupModifyFilterKind; value: string } {
+  if (selector.kind === 'prefix') return { kind: 'prefix', value: selector.value };
+  if (selector.kind === 'seller')
+    return { kind: 'seller', value: String(selector.sellerId) };
+  return { kind: 'user', value: String(selector.userChatId) };
+}
+
+function sessionToTracking(
+  ctx: BotContext,
+): { kind: GroupModifyFilterKind; value: string } {
+  const kind = ctx.session.groupModifyFilterKind;
+  if (kind === 'prefix')
+    return { kind: 'prefix', value: ctx.session.groupModifyFilterPrefix ?? '' };
+  if (kind === 'seller')
+    return {
+      kind: 'seller',
+      value: String(ctx.session.groupModifyFilterSellerId ?? ''),
+    };
+  return { kind: 'user', value: ctx.session.groupModifyFilterUserChatId ?? '' };
 }
 
 // ── render: pick filter ──────────────────────────────────────────────
@@ -165,6 +190,17 @@ async function resolveAndShowPreview(
 ): Promise<void> {
   const db = getDb();
   const accounts = await resolveAccounts(db, selector);
+
+  const tracking = selectorToTracking(selector);
+  logEvent(
+    'admin.group_modify_resolved',
+    {
+      filterKind: tracking.kind,
+      filterValue: tracking.value,
+      matchedCount: accounts.length,
+    },
+    actorFrom(ctx.from),
+  );
 
   if (accounts.length === 0) {
     const msg = await getMessage('admin.group_modify.no_matches');
@@ -367,7 +403,10 @@ async function renderConfirm(ctx: BotContext): Promise<void> {
 
 // ── execute batch ────────────────────────────────────────────────────
 
-async function executeAndReport(ctx: BotContext): Promise<void> {
+async function executeAndReport(
+  ctx: BotContext,
+  isRetry = false,
+): Promise<void> {
   const db = getDb();
   const marzban = getMarzban();
   const selected = ctx.session.groupModifySelectedIds ?? [];
@@ -421,6 +460,36 @@ async function executeAndReport(ctx: BotContext): Promise<void> {
   ctx.session.groupModifyFailedIds = report.results
     .filter((r): r is Extract<AccountResult, { ok: false }> => !r.ok)
     .map((r) => r.accountId);
+
+  if (isRetry) {
+    logEvent(
+      'admin.group_modify_retry',
+      {
+        failedCount: ordered.length,
+        succeeded: report.succeeded,
+        failed: report.failed,
+      },
+      actorFrom(ctx.from),
+    );
+  } else {
+    const tracking = sessionToTracking(ctx);
+    logEvent(
+      'admin.group_modify_applied',
+      {
+        filterKind: tracking.kind,
+        filterValue: tracking.value,
+        selectedCount: ordered.length,
+        succeeded: report.succeeded,
+        failed: report.failed,
+        addGb: mods.addGb,
+        addDays: mods.addDays,
+        status: mods.status,
+        resetTraffic: mods.resetTraffic,
+      },
+      actorFrom(ctx.from),
+    );
+  }
+
   await renderReport(ctx, report.succeeded, report.failed);
 }
 
@@ -737,7 +806,7 @@ adminGroupModifyScene.action('gm_retry_failed', async (ctx) => {
   }
   ctx.session.groupModifyMatchedIds = failedIds;
   ctx.session.groupModifySelectedIds = failedIds;
-  await executeAndReport(ctx);
+  await executeAndReport(ctx, true);
 });
 
 adminGroupModifyScene.action('gm_failed_detail', async (ctx) => {

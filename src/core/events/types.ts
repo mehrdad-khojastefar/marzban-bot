@@ -110,6 +110,32 @@ export interface AdminAccountDeletedPayload {
   accountId: number;
 }
 
+export type GroupModifyFilterKind = 'prefix' | 'seller' | 'user';
+
+export interface AdminGroupModifyResolvedPayload {
+  filterKind: GroupModifyFilterKind;
+  filterValue: string;
+  matchedCount: number;
+}
+
+export interface AdminGroupModifyAppliedPayload {
+  filterKind: GroupModifyFilterKind;
+  filterValue: string;
+  selectedCount: number;
+  succeeded: number;
+  failed: number;
+  addGb?: number;
+  addDays?: number;
+  status?: 'active' | 'disabled';
+  resetTraffic?: boolean;
+}
+
+export interface AdminGroupModifyRetryPayload {
+  failedCount: number;
+  succeeded: number;
+  failed: number;
+}
+
 export interface SellerAccountCreatedPayload {
   sellerId: number;
   marzbanUsername: string;
@@ -262,6 +288,9 @@ export type EventPayloadMap = {
   'admin.account_created_manually': AdminAccountCreatedManuallyPayload;
   'admin.account_edited': AdminAccountEditedPayload;
   'admin.account_deleted': AdminAccountDeletedPayload;
+  'admin.group_modify_resolved': AdminGroupModifyResolvedPayload;
+  'admin.group_modify_applied': AdminGroupModifyAppliedPayload;
+  'admin.group_modify_retry': AdminGroupModifyRetryPayload;
 
   'seller.account_created': SellerAccountCreatedPayload;
   'seller.account_deleted': SellerAccountDeletedPayload;

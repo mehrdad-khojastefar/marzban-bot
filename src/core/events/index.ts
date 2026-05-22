@@ -8,6 +8,7 @@ export type {
   EventType,
   EventPayload,
   EventPayloadMap,
+  GroupModifyFilterKind,
 } from './types';
 export { categoryOf, CATEGORY_EMOJI } from './types';
 
