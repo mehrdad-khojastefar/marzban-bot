@@ -9,7 +9,11 @@ import { initSettingService } from './services/settingService';
 import { initPremzyJwt } from '../premzy/jwt';
 import { createStage, SCENE_START } from './scenes';
 import { errorHandler, channelCheck, eventLoggerMiddleware } from './middlewares';
-import { registerAdminPaymentHandler, registerAdminUserApprovalHandler } from './handlers';
+import {
+  registerAdminPaymentHandler,
+  registerAdminUserApprovalHandler,
+  registerAdminBackupHandler,
+} from './handlers';
 import { setBotInstance } from '../core/events';
 
 export async function createBot(): Promise<Telegraf<BotContext>> {
@@ -60,6 +64,7 @@ export async function createBot(): Promise<Telegraf<BotContext>> {
 
   registerAdminPaymentHandler(bot);
   registerAdminUserApprovalHandler(bot);
+  registerAdminBackupHandler(bot);
 
   // Catch-all for any unhandled errors that bypass the middleware
   bot.catch((err, ctx) => {

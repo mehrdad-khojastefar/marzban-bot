@@ -20,6 +20,9 @@ const validEnv = {
   LOG_TOPIC_SELLER: '5',
   LOG_TOPIC_ERRORS: '6',
   LOG_TOPIC_SYSTEM: '7',
+  LOG_TOPIC_BACKUP_MARZBAN: '8',
+  LOG_TOPIC_BACKUP_BOT: '9',
+  MARZBAN_DATABASE_URL: 'postgresql://marzban:marzban@localhost:5432/marzban',
 };
 
 describe('loadEnv', () => {

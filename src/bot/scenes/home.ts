@@ -40,18 +40,20 @@ homeScene.enter(async (ctx) => {
 
   // Admin sees only admin panel
   if (isAdmin) {
-    await sendOrEdit(
-      ctx,
-      msg,
-      Markup.inlineKeyboard([
-        [Markup.button.callback('👥 مدیریت فروشندگان', 'admin_sellers')],
-        [Markup.button.callback('📋 مدیریت اکانت‌ها', 'admin_accounts')],
-        [Markup.button.callback('💳 مدیریت کارت‌ها', 'admin_bank_cards')],
-        [Markup.button.callback('👤 مدیریت کاربران', 'admin_users')],
-        [Markup.button.callback('📦 مدیریت پلن‌گروپ‌ها', 'admin_plan_groups')],
-        [Markup.button.callback('✏️ ویرایش گروهی اکانت‌ها', 'admin_group_modify')],
-      ]),
-    );
+    const backupEnabled = (await getSetting('backup_enabled')) === 'true';
+    const adminButtons: ReturnType<typeof Markup.button.callback>[][] = [
+      [Markup.button.callback('👥 مدیریت فروشندگان', 'admin_sellers')],
+      [Markup.button.callback('📋 مدیریت اکانت‌ها', 'admin_accounts')],
+      [Markup.button.callback('💳 مدیریت کارت‌ها', 'admin_bank_cards')],
+      [Markup.button.callback('👤 مدیریت کاربران', 'admin_users')],
+      [Markup.button.callback('📦 مدیریت پلن‌گروپ‌ها', 'admin_plan_groups')],
+      [Markup.button.callback('✏️ ویرایش گروهی اکانت‌ها', 'admin_group_modify')],
+    ];
+    if (backupEnabled) {
+      const label = await getMessage('admin.backup.button');
+      adminButtons.push([Markup.button.callback(label, 'admin_backup')]);
+    }
+    await sendOrEdit(ctx, msg, Markup.inlineKeyboard(adminButtons));
     return;
   }
 

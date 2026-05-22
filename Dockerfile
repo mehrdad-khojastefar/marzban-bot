@@ -43,6 +43,11 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+# postgresql-client provides `pg_dump`, needed by the scheduled backup job.
+# `postgresql16-client` matches Postgres 16 servers; bump the version here
+# if the Marzban or bot DB server is upgraded.
+RUN apk add --no-cache postgresql16-client
+
 RUN addgroup -S doves && adduser -S doves -G doves
 
 COPY --from=prod-deps /app/node_modules ./node_modules

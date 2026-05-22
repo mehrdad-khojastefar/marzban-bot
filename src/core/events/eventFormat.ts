@@ -377,6 +377,37 @@ export const formatters: FormatterMap = {
     header('system.admin_bootstrapped', actor, now) +
     kv('admin_chat_id', String(p.adminChatId)) +
     kv('seller_id', p.sellerId),
+
+  'system.backup_started': (p, actor, now) =>
+    header('system.backup_started', actor, now) +
+    kv('trigger', p.trigger) +
+    kv('dbs', p.dbs.join(', ')),
+
+  'system.backup_completed': (p, actor, now) =>
+    header('system.backup_completed', actor, now) +
+    kv('db', p.db) +
+    kv('size', formatBytes(p.sizeBytes)) +
+    kv('sha256', p.sha256) +
+    kv('duration_ms', p.durationMs) +
+    kv('trigger', p.trigger),
+
+  'system.backup_skipped': (p, actor, now) =>
+    header('system.backup_skipped', actor, now) +
+    kv('trigger', p.trigger) +
+    kv('reason', p.reason),
+
+  'error.backup_failed': (p, actor, now) =>
+    header('error.backup_failed', actor, now) +
+    kv('db', p.db) +
+    kv('stage', p.stage) +
+    kv('trigger', p.trigger) +
+    `message:\n<pre>${htmlEscape(p.message.slice(0, 800))}</pre>\n`,
+
+  'error.backup_misconfigured': (p, actor, now) =>
+    header('error.backup_misconfigured', actor, now) +
+    kv('key', p.key) +
+    kv('value', p.value) +
+    kv('reason', p.reason),
 };
 
 export function formatEvent<T extends EventType>(

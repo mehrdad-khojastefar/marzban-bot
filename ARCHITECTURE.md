@@ -52,3 +52,32 @@ At-most-one entry per op type. Tapping `add_gb` / `add_days` opens an editor wit
 ### No new Prisma models
 The feature reads existing `Account` rows by `marzban_username` prefix, `seller_id`, or via `user.chat_id`. No migration required.
 
+## Database Backup — Architecture Decisions
+
+### Why a separate connection string for Marzban
+The bot already talks to the Marzban panel over HTTP (`src/core/marzban/client.ts`) — it has never needed direct DB access. Backup is the first job that does. Adding `MARZBAN_DATABASE_URL` keeps the new dependency narrow: it is consumed only by `pg_dump`, never wired into Prisma, and the bot remains functional without it only at boot if explicitly stubbed (Zod requires it as part of the env schema).
+
+### `pg_dump | gzip | sha256` in a single stream
+`runDump` spawns `pg_dump`, pipes stdout through `zlib.createGzip()`, tees the gzipped bytes through `crypto.createHash('sha256')`, and writes to a tmp file in one pipeline. Size, hash, and duration are reported in a single `DumpResult`. No intermediate uncompressed file ever hits disk — the bot runs as a non-root user with limited tmp space, and Marzban DBs can be hundreds of MB.
+
+### BotSetting-tunable schedule
+`backup_enabled` and `backup_cron` live in the `bot_settings` table, matching the precedent of `events_enabled`, `buy_enabled`, etc. Operations changes (pause backups for a maintenance window, shift the hour) don't require a redeploy. `rescheduleBackupScheduler(bot)` is the public hook for applying live changes.
+
+### Sequential DB runs + in-process lock
+The two DBs back up one at a time inside a single scheduled run — lower simultaneous pg_dump load, one Telegram upload at a time. Overlapping runs are prevented by an in-process `isRunning` boolean in `runner.ts`. A cron tick or manual button press that arrives while a run is in flight emits `system.backup_skipped` instead of stacking up. The lock is intentionally process-local (not Redis/DB) because the scheduler itself only exists inside the single bot process.
+
+### Continue-on-error across DBs
+A `pg_dump` or upload failure for `marzban` does NOT abort `marzban_bot`. Each DB result is captured independently and reported via `system.backup_completed` (success) or `error.backup_failed` (with `stage: 'pg_dump' | 'gzip' | 'upload'`). The manual-trigger button surfaces the per-DB error list in the admin's reply.
+
+### Topic reuse over a separate group
+Backups post to the existing `LOG_GROUP_ID` event-tracking supergroup, using two new dedicated topics (`LOG_TOPIC_BACKUP_MARZBAN`, `LOG_TOPIC_BACKUP_BOT`). Same pattern the eventLogger uses for per-category routing — no new group concept introduced. Status events (`system.backup_*`, `error.backup_*`) still ride the SYSTEM/ERRORS topics via `logEvent`; only the binary dump itself goes to a backup topic, via `sendDocument`.
+
+### No local retention
+Each tmp file is `unlink`ed in a `finally` after upload (success OR failure). Telegram is the only backup store; there is no rolling local copy. This matches the "the bot owns nothing" philosophy of the project and avoids a slow disk-fill failure mode on the host.
+
+### `postgresql16-client` in the Docker image
+The final stage of `Dockerfile` (`node:24-alpine`, non-root `doves`) installs `postgresql16-client` so `pg_dump` is on `PATH` at runtime. Pinning to `16` keeps the client version explicit — bump the version suffix when the upstream Marzban or bot DB server is upgraded past 16.
+
+### Invalid cron is recoverable, not fatal
+If `backup_cron` parses as invalid, the scheduler emits `error.backup_misconfigured`, falls back to `DEFAULT_CRON` (`0 3 * * *`), and keeps running. Silent total stoppage would be worse than running on an unexpected schedule — the misconfigured event tells the admin to fix it.
+

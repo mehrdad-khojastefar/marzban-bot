@@ -134,6 +134,13 @@ const defaultMessages: { key: string; text: string }[] = [
   { key: 'admin.group_modify.report', text: '🏁 گزارش نهایی:\n\n✅ موفق: {ok}\n❌ ناموفق: {fail}' },
   { key: 'admin.group_modify.report_detail_title', text: '📋 جزئیات اکانت‌های ناموفق:' },
   { key: 'admin.group_modify.summary_title', text: '📊 خلاصه تغییرات اکانت‌ها:' },
+  // admin backup
+  { key: 'admin.backup.button', text: '🗄 پشتیبان‌گیری فوری' },
+  { key: 'admin.backup.running', text: '⏳ در حال تهیه پشتیبان…' },
+  { key: 'admin.backup.done', text: '✅ پشتیبان با موفقیت ارسال شد.' },
+  { key: 'admin.backup.failed', text: '❌ خطا در تهیه پشتیبان:\n{reason}' },
+  { key: 'admin.backup.disabled', text: 'قابلیت پشتیبان‌گیری غیرفعال است.' },
+  { key: 'admin.backup.in_progress', text: 'یک پشتیبان‌گیری در حال اجراست. لطفاً صبر کنید.' },
 ];
 
 const defaultSettings: { key: string; value: string }[] = [
@@ -142,6 +149,8 @@ const defaultSettings: { key: string; value: string }[] = [
   { key: 'test_enabled', value: 'false' },
   { key: 'renew_enabled', value: 'false' },
   { key: 'events_enabled', value: 'true' }, // master switch for event tracking
+  { key: 'backup_enabled', value: 'false' }, // master switch for scheduled DB backups
+  { key: 'backup_cron', value: '0 3 * * *' }, // cron expression, server time
 ];
 
 function generateCode(): string {

@@ -21,6 +21,9 @@ process.env.LOG_TOPIC_ADMIN = '4';
 process.env.LOG_TOPIC_SELLER = '5';
 process.env.LOG_TOPIC_ERRORS = '6';
 process.env.LOG_TOPIC_SYSTEM = '7';
+process.env.LOG_TOPIC_BACKUP_MARZBAN = '8';
+process.env.LOG_TOPIC_BACKUP_BOT = '9';
+process.env.MARZBAN_DATABASE_URL = 'postgresql://marzban';
 
 function flushPromises(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));

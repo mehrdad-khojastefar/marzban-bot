@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createBot } from './bot';
 import { logEvent } from '../core/events';
+import { startBackupScheduler, stopBackupScheduler } from '../core/backup';
 
 async function main() {
   const bot = await createBot();
@@ -13,8 +14,11 @@ async function main() {
     version: process.env.npm_package_version ?? '0.1.0',
   });
 
+  await startBackupScheduler(bot);
+
   const stop = (signal: 'SIGINT' | 'SIGTERM') => {
     logEvent('system.bot_stopping', { signal });
+    stopBackupScheduler();
     bot.stop(signal);
   };
 

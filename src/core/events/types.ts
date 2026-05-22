@@ -263,6 +263,40 @@ export interface SystemAdminBootstrappedPayload {
   sellerId: number;
 }
 
+export type BackupDbName = 'marzban' | 'marzban_bot';
+export type BackupTrigger = 'cron' | 'manual';
+
+export interface SystemBackupStartedPayload {
+  trigger: BackupTrigger;
+  dbs: BackupDbName[];
+}
+
+export interface SystemBackupCompletedPayload {
+  db: BackupDbName;
+  sizeBytes: number;
+  sha256: string;
+  durationMs: number;
+  trigger: BackupTrigger;
+}
+
+export interface SystemBackupSkippedPayload {
+  reason: 'already_running' | 'feature_disabled';
+  trigger: BackupTrigger;
+}
+
+export interface ErrorBackupFailedPayload {
+  db: BackupDbName;
+  stage: 'pg_dump' | 'gzip' | 'upload';
+  message: string;
+  trigger: BackupTrigger;
+}
+
+export interface ErrorBackupMisconfiguredPayload {
+  key: 'backup_cron';
+  value: string;
+  reason: string;
+}
+
 // ── Discriminated union ─────────────────────────────────────────────
 
 export type EventPayloadMap = {
@@ -317,6 +351,12 @@ export type EventPayloadMap = {
   'system.bot_started': SystemBotStartedPayload;
   'system.bot_stopping': SystemBotStoppingPayload;
   'system.admin_bootstrapped': SystemAdminBootstrappedPayload;
+  'system.backup_started': SystemBackupStartedPayload;
+  'system.backup_completed': SystemBackupCompletedPayload;
+  'system.backup_skipped': SystemBackupSkippedPayload;
+
+  'error.backup_failed': ErrorBackupFailedPayload;
+  'error.backup_misconfigured': ErrorBackupMisconfiguredPayload;
 };
 
 export type EventType = keyof EventPayloadMap;

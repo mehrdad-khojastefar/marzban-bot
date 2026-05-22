@@ -29,12 +29,18 @@ export const envSchema = z.object({
   LOG_TOPIC_SELLER: z.coerce.number().int(),
   LOG_TOPIC_ERRORS: z.coerce.number().int(),
   LOG_TOPIC_SYSTEM: z.coerce.number().int(),
+  LOG_TOPIC_BACKUP_MARZBAN: z.coerce.number().int(),
+  LOG_TOPIC_BACKUP_BOT: z.coerce.number().int(),
 
   SOCKS5_PROXY: z.string().optional(),
   NODE_ENV: z.string().optional(),
 
   // Admin: how many Marzban modify calls to run in parallel during a group-modify batch.
   GROUP_MODIFY_CONCURRENCY: z.string().default('8'),
+
+  // Marzban Postgres connection string — used ONLY by the scheduled pg_dump
+  // backup job. Never wired to Prisma.
+  MARZBAN_DATABASE_URL: z.string(),
 });
 
 export type Env = z.infer<typeof envSchema>;
