@@ -81,7 +81,7 @@ homeScene.enter(async (ctx) => {
   if (testEnabled === 'true') {
     row2.push(Markup.button.callback('اکانت تستی', 'test_account'));
   }
-  row2.push(Markup.button.callback('خرید اکانت', 'buy_account'));
+  row2.push(Markup.button.callback('🟢 خرید اکانت', 'buy_account'));
   buttons.push(row2);
 
   buttons.push([Markup.button.callback('پشتیبانی', 'support')]);
