@@ -89,12 +89,16 @@ buyAccountScene.enter(async (ctx) => {
     }
 
     const msg = await getMessage('buy.select_plan');
-    const buttons = plans.map((plan) => [
-      Markup.button.callback(
-        `🔹 ${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${String(plan.duration_days)} روزه - ${formatPrice(plan.price)}`,
-        `select_plan_${plan.id}`,
-      ),
-    ]);
+    const buttons = plans.map((plan) => {
+      const gb = Math.round(Number(plan.data_limit) / GB);
+      const priceK = (plan.price / 1000).toLocaleString('en-US');
+      return [
+        Markup.button.callback(
+          `${String(gb)} گیگ⭐️ - ${String(plan.duration_days)} روزه⏳-${priceK} هزارتومان 💸`,
+          `select_plan_${plan.id}`,
+        ),
+      ];
+    });
     buttons.push([Markup.button.callback('🔙 بازگشت', 'back')]);
 
     await sendOrEdit(ctx, msg, Markup.inlineKeyboard(buttons));
