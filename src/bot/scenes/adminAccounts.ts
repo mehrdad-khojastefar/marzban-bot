@@ -66,16 +66,19 @@ async function renderAccountList(ctx: BotContext) {
     db.account.count({ where }),
   ]);
 
-  // Stats
-  const [totalAccounts, unpaidCount, unpaidSum] = await Promise.all([
+  // Stats: one count for the total, one aggregate for unpaid count + sum.
+  // Server-side aggregation only — no row materialization (the old version
+  // pulled every unpaid account into Node just to sum a column).
+  const [totalAccounts, unpaidStats] = await Promise.all([
     db.account.count(),
-    db.account.count({ where: { payment_status: 'unpaid' } }),
-    db.account.findMany({
+    db.account.aggregate({
       where: { payment_status: 'unpaid' },
-      select: { price: true },
+      _count: { _all: true },
+      _sum: { price: true },
     }),
   ]);
-  const totalDebt = unpaidSum.reduce((sum, a) => sum + (a.price ?? 0), 0);
+  const unpaidCount = unpaidStats._count._all;
+  const totalDebt = unpaidStats._sum.price ?? 0;
 
   let header =
     `📋 مدیریت اکانت‌ها\n\n` +

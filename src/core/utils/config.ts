@@ -41,6 +41,10 @@ export const envSchema = z.object({
   // Marzban Postgres connection string — used ONLY by the scheduled pg_dump
   // backup job. Never wired to Prisma.
   MARZBAN_DATABASE_URL: z.string(),
+
+  LOG_LEVEL: z.string().default('info'),
+  // Prometheus /metrics port. Set to 0 to disable the metrics server entirely.
+  METRICS_PORT: z.coerce.number().int().default(9090),
 });
 
 export type Env = z.infer<typeof envSchema>;

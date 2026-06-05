@@ -95,3 +95,20 @@ If the contact the admin shares is not yet a registered `User`, the move is refu
 ### Reply-keyboard exception to the single-message UI rule
 Telegram's `request_contact` is only available on reply keyboards, not inline keyboards. The scene therefore briefly sends a second message that carries the reply keyboard, then dismisses it (via `delete_message` + a zero-width-space `remove_keyboard` message) the moment a valid contact arrives or the admin cancels. This is the same kind of carve-out the project already makes for config/subscription links.
 
+---
+
+## Performance & Scalability
+
+### Index policy
+Postgres does **not** auto-index foreign keys. Any column used in a `WHERE`, `ORDER BY`, or join condition in a per-update / per-request code path **must** have an explicit `@@index` in `prisma/schema.prisma`. This rule applies to every new scene and every new query.
+
+Initial baseline (migration `20260518000000_add_performance_indexes`):
+- `accounts`: `(user_id)`, `(seller_id)`, `(marzban_username)`, `(marzban_sub_token)`, `(expires_at)`, `(seller_id, payment_status)`
+- `users`: `(status)`
+- `payments`: `(user_id)`, `(status)`, `(user_id, status)`
+- `transactions`: `(user_id)`, `(account_id)`, `(user_id, status)` (in addition to pre-existing `(status)` and `(premzy_order_id)`)
+
+Composite indexes encode actual query shape — order matters. `(seller_id, payment_status)` accelerates "this seller's unpaid totals" but is useless for "all unpaid across sellers" (we'd add `(payment_status)` alone for that, only when a query path needs it).
+
+### Why hand-written idempotent SQL?
+The existing migration history uses `IF NOT EXISTS` / `IF EXISTS` patterns (see `20260508093043_drift_cleanup`) so migrations can recover from drift without manual surgery. Index migrations follow the same pattern: each `CREATE INDEX IF NOT EXISTS` is safe to re-run.

@@ -49,12 +49,21 @@ export type SubscriptionClientType =
 export interface Token {
   access_token: string
   token_type?: string
+  expires_in?: number
 }
 
 export interface MarzbanClientConfig {
   baseUrl: string
   username: string
   password: string
+  /** Per-request timeout in ms. Defaults to 8000. */
+  timeoutMs?: number
+  /** Max sockets per origin for the keep-alive agent. Defaults to 50. */
+  keepAliveMaxSockets?: number
+  /** Delay before a single transient retry (network / 5xx). Defaults to 250 ms. */
+  retryDelayMs?: number
+  /** Fallback token TTL when the server omits `expires_in`. Defaults to 30 min. */
+  tokenTtlMs?: number
 }
 
 export interface Admin {

@@ -1,4 +1,43 @@
 import { Context, Scenes } from 'telegraf';
+import type { AccountPaymentStatus, UserStatus } from '@prisma/client';
+import type { Logger } from 'pino';
+
+/**
+ * Slim cached view of the Account row currently being managed by the admin in
+ * SCENE_ADMIN_VIEW_ACCOUNT. Populated once per scene by `renderDetail`; read
+ * by the simple action handlers so they don't each re-query the DB just to
+ * resolve `marzban_username` / `payment_status` / `seller_*` ids.
+ */
+export interface ViewedAccountCache {
+  id: number;
+  marzban_username: string;
+  payment_status: AccountPaymentStatus | null;
+  seller_id: number | null;
+  seller_plan_id: number | null;
+}
+
+/**
+ * Slim view of the User row attached to every update by `attachUser`
+ * middleware. Keep this aligned with the `select` in
+ * `src/bot/middlewares/attachUser.ts`.
+ */
+export interface AttachedUser {
+  id: number;
+  chat_id: bigint;
+  status: UserStatus;
+  has_test: boolean;
+  bank_card_id: number | null;
+  plan_group_id: number | null;
+  first_name: string;
+  last_name: string | null;
+  username: string | null;
+}
+
+export interface BotState {
+  user?: AttachedUser | null;
+  requestId?: string;
+  log?: Logger;
+}
 
 export interface SessionData extends Scenes.SceneSessionData {
   lastBotMessageId?: number;
@@ -9,6 +48,7 @@ export interface SessionData extends Scenes.SceneSessionData {
   pendingPaymentId?: number;
   pendingTransactionId?: number;
   selectedAccountId?: number;
+  viewedAccount?: ViewedAccountCache;
   awaitingRename?: boolean;
   renewAccountId?: number;
 
@@ -92,4 +132,5 @@ export interface SessionData extends Scenes.SceneSessionData {
 export interface BotContext extends Context {
   session: SessionData;
   scene: Scenes.SceneContextScene<BotContext>;
+  state: BotState;
 }

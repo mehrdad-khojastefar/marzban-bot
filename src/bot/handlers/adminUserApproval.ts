@@ -1,6 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../context';
 import { getDb } from '../../core/db';
+import { invalidateUserCache } from '../middlewares';
 import { getMessage } from '../services/messageService';
 import { loadEnv } from '../../core/utils/config';
 import { actorFrom, logEvent } from '../../core/events';
@@ -150,6 +151,9 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
         },
       },
     });
+    // Drop the per-update cache so the user's next interaction sees
+    // status='approved' instead of the cached 'pending' / null.
+    invalidateUserCache(user.chat_id);
 
     logEvent(
       'admin.user_approval_confirmed',
@@ -226,6 +230,7 @@ export function registerAdminUserApprovalHandler(bot: Telegraf<BotContext>): voi
       where: { id: userId },
       data: { status: 'banned' },
     });
+    invalidateUserCache(user.chat_id);
 
     logEvent(
       'admin.user_rejected',

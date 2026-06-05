@@ -1,6 +1,5 @@
 import http from 'node:http';
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { createPrismaClient } from '../core/db';
 import { renameConfigLinks } from '../core/utils/format';
 
 interface SubServerConfig {
@@ -11,8 +10,7 @@ interface SubServerConfig {
 }
 
 export async function startSubServer(config: SubServerConfig): Promise<http.Server> {
-  const adapter = new PrismaPg({ connectionString: config.databaseUrl });
-  const db = new PrismaClient({ adapter });
+  const db = createPrismaClient({ databaseUrl: config.databaseUrl, source: 'sub' });
 
   const server = http.createServer(async (req, res) => {
     // Only handle GET /sub/*
@@ -30,10 +28,16 @@ export async function startSubServer(config: SubServerConfig): Promise<http.Serv
     }
 
     try {
-      // 1. Look up the account by sub token to get seller's link_prefix and marzban_username
+      // 1. Look up the account by sub token to get the seller's link_prefix
+      //    and the marzban_username we'll forward. Per-request hot path —
+      //    select only what we actually render.
       const account = await db.account.findFirst({
         where: { marzban_sub_token: token },
-        include: { seller: true },
+        select: {
+          marzban_username: true,
+          display_name: true,
+          seller: { select: { link_prefix: true } },
+        },
       });
 
       if (!account) {

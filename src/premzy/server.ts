@@ -1,9 +1,14 @@
 import http from 'node:http';
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { Telegraf } from 'telegraf';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { provisionAccount, buildFullAccountNotification, renewAccount, buildRenewNotification } from '../core/provision';
+import { createPrismaClient } from '../core/db';
+import {
+  provisionAccount,
+  buildFullAccountNotification,
+  renewAccount,
+  buildRenewNotification,
+  ProvisionConflictError,
+} from '../core/provision';
 import { formatBytes } from '../core/utils/format';
 import { logEvent, setBotInstance } from '../core/events';
 import { initSettingService } from '../bot/services/settingService';
@@ -17,8 +22,7 @@ interface PremzyServerConfig {
 }
 
 export async function startPremzyServer(config: PremzyServerConfig): Promise<http.Server> {
-  const adapter = new PrismaPg({ connectionString: config.databaseUrl });
-  const db = new PrismaClient({ adapter });
+  const db = createPrismaClient({ databaseUrl: config.databaseUrl, source: 'premzy' });
   // The event logger reads `events_enabled` via getSetting(), which requires
   // the setting service to be initialized in this process.
   initSettingService(db);
@@ -99,7 +103,9 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
     });
 
     try {
-      // Look up the transaction by our UUID — exact match
+      // Look up the transaction by our UUID — exact match. The provision
+      // functions own all status transitions (claim → provisioning →
+      // completed / failed) so we only need user / plan data here.
       const transaction = await db.transaction.findUnique({
         where: { transaction_id: transactionId },
         include: { user: true, plan: true },
@@ -111,36 +117,6 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
         res.end(JSON.stringify({ ok: false, message: 'transaction not found' }));
         return;
       }
-
-      // Idempotency: already completed — return success
-      if (transaction.status === 'completed') {
-        console.log(`Premzy callback: transaction ${transactionId} already completed`);
-        res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, message: 'already processed' }));
-        return;
-      }
-
-      // Already provisioning — return success (in progress)
-      if (transaction.status === 'provisioning') {
-        console.log(`Premzy callback: transaction ${transactionId} already provisioning`);
-        res.writeHead(200);
-        res.end(JSON.stringify({ ok: true, message: 'in progress' }));
-        return;
-      }
-
-      // Only process checkout or failed (retry) transactions
-      if (!['checkout', 'failed'].includes(transaction.status)) {
-        console.warn(`Premzy callback: unexpected status ${transaction.status} for ${transactionId}`);
-        res.writeHead(200);
-        res.end(JSON.stringify({ ok: false, message: `unexpected status: ${transaction.status}` }));
-        return;
-      }
-
-      // Mark as provisioning
-      await db.transaction.update({
-        where: { id: transaction.id },
-        data: { status: 'provisioning' },
-      });
 
       // Determine data limit and duration
       let dataLimit: number;
@@ -157,71 +133,72 @@ export async function startPremzyServer(config: PremzyServerConfig): Promise<htt
         planLabel = formatBytes(dataLimit);
       }
 
-      // Route based on transaction type
-      if (transaction.type === 'renew') {
-        // ── Renew flow ──
-        if (!transaction.account_id) {
-          throw new Error(`Renew transaction ${transactionId} has no account_id`);
-        }
-
-        const renewResult = await renewAccount(db, {
-          transactionId: transaction.id,
-          accountId: transaction.account_id,
-          dataLimitToAdd: dataLimit,
-          durationDays,
-        });
-
-        if (transaction.user) {
-          try {
-            const msg = buildRenewNotification(renewResult);
-            await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
-          } catch (notifyErr) {
-            console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+      try {
+        if (transaction.type === 'renew') {
+          if (!transaction.account_id) {
+            throw new Error(`Renew transaction ${transactionId} has no account_id`);
           }
-        }
-
-        console.log(`Premzy callback: ${transactionId} → renewed account=${renewResult.marzbanUsername} ✅`);
-      } else {
-        // ── Buy flow (existing) ──
-        const result = await provisionAccount(db, {
-          transactionId: transaction.id,
-          userId: transaction.user_id,
-          planId: transaction.plan_id,
-          dataLimit,
-          durationDays,
-          amount: transaction.amount,
-        });
-
-        if (transaction.user) {
-          try {
-            const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
-            await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
-          } catch (notifyErr) {
-            console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+          const renewResult = await renewAccount(db, {
+            transactionId: transaction.id,
+            accountId: transaction.account_id,
+            dataLimitToAdd: dataLimit,
+            durationDays,
+          });
+          if (transaction.user) {
+            try {
+              const msg = buildRenewNotification(renewResult);
+              await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+            } catch (notifyErr) {
+              console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+            }
           }
+          console.log(`Premzy callback: ${transactionId} → renewed account=${renewResult.marzbanUsername} ✅`);
+        } else {
+          const result = await provisionAccount(db, {
+            transactionId: transaction.id,
+            userId: transaction.user_id,
+            planId: transaction.plan_id,
+            dataLimit,
+            durationDays,
+            amount: transaction.amount,
+          });
+          if (transaction.user) {
+            try {
+              const msg = await buildFullAccountNotification(result, dataLimit, planLabel);
+              await telegram.sendMessage(transaction.user.chat_id.toString(), msg, { parse_mode: 'HTML' });
+            } catch (notifyErr) {
+              console.error(`Premzy callback: failed to notify user ${transaction.user.chat_id}:`, notifyErr);
+            }
+          }
+          console.log(`Premzy callback: ${transactionId} → account=${result.marzbanUsername} ✅`);
         }
-
-        console.log(`Premzy callback: ${transactionId} → account=${result.marzbanUsername} ✅`);
+      } catch (provisionErr) {
+        if (provisionErr instanceof ProvisionConflictError) {
+          // Already in flight, terminal, or otherwise unclaimable. The
+          // transaction state is already correct in the DB; Premzy can
+          // safely retry but doesn't need us to do anything.
+          console.log(
+            `Premzy callback: ${transactionId} not claimable (status=${provisionErr.currentStatus})`,
+          );
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              ok: true,
+              message: `already in state: ${provisionErr.currentStatus}`,
+            }),
+          );
+          return;
+        }
+        throw provisionErr;
       }
 
       res.writeHead(200);
       res.end(JSON.stringify({ ok: true }));
     } catch (err) {
+      // The provision function already marked the transaction failed before
+      // throwing (or the failure is in our own code outside it). Surface a
+      // 500 so Premzy can retry later.
       console.error(`Premzy callback: provisioning failed for ${transactionId}:`, err);
-
-      // Mark as failed for admin visibility
-      try {
-        await db.transaction.updateMany({
-          where: { transaction_id: transactionId, status: { not: 'completed' } },
-          data: {
-            status: 'failed',
-            error_message: err instanceof Error ? err.message : String(err),
-          },
-        });
-      } catch {
-        // Best effort
-      }
-
       res.writeHead(500);
       res.end(JSON.stringify({ error: 'provisioning failed' }));
     }
