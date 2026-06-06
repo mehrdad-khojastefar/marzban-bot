@@ -9,6 +9,12 @@ export function toEnglishDigits(str: string): string {
   return str.replace(/[۰-۹٠-٩]/g, (d) => PERSIAN_TO_ENGLISH[d] ?? d);
 }
 
+const ENGLISH_TO_PERSIAN_DIGIT = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+
+export function toPersianDigits(str: string): string {
+  return str.replace(/\d/g, (d) => ENGLISH_TO_PERSIAN_DIGIT[Number(d)]);
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1073741824) {
     const gb = (bytes / 1073741824).toFixed(bytes % 1073741824 === 0 ? 0 : 1);
@@ -16,6 +22,19 @@ export function formatBytes(bytes: number): string {
   }
   const mb = (bytes / 1048576).toFixed(0);
   return mb + ' MB';
+}
+
+export function formatBytesFa(bytes: number): string {
+  if (bytes >= 1073741824) {
+    const gb = (bytes / 1073741824).toFixed(bytes % 1073741824 === 0 ? 0 : 1);
+    return toPersianDigits(gb) + ' گیگ';
+  }
+  const mb = (bytes / 1048576).toFixed(0);
+  return toPersianDigits(mb) + ' مگ';
+}
+
+export function formatPriceFa(toman: number): string {
+  return toPersianDigits(toman.toLocaleString('en-US')) + ' تومان';
 }
 
 export function formatDaysLeft(expiresAt: Date): string {

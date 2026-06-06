@@ -5,7 +5,7 @@ import { getMessage } from '../services/messageService';
 import { getSetting } from '../services/settingService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
-import { formatBytes, formatPrice } from '../../core/utils/format';
+import { formatBytes, formatPrice, formatBytesFa, formatPriceFa, toPersianDigits } from '../../core/utils/format';
 import { BankCard, PaymentMethod, PrismaClient } from '@prisma/client';
 import { buildCheckoutUrl } from '../../premzy/jwt';
 import { actorFrom, logEvent } from '../../core/events';
@@ -91,7 +91,7 @@ buyAccountScene.enter(async (ctx) => {
     const msg = await getMessage('buy.select_plan');
     const buttons = plans.map((plan) => [
       Markup.button.callback(
-        `🔹 ${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${String(plan.duration_days)} روزه - ${formatPrice(plan.price)}`,
+        `⭐️ ${formatBytesFa(Number(plan.data_limit))} | 🕊️ ${toPersianDigits(String(plan.duration_days))} روز | 💸 ${formatPriceFa(plan.price)}`,
         `select_plan_${plan.id}`,
       ),
     ]);

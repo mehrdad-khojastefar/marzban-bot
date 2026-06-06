@@ -6,7 +6,7 @@ import { getMessage } from '../services/messageService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, buildSubUrl, fetchAndRenameConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes, formatBytesFa, formatPriceFa, toPersianDigits, buildSubUrl, fetchAndRenameConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 import { actorFrom, logEvent } from '../../core/events';
 
@@ -207,10 +207,10 @@ sellerCreateAccountScene.enter(async (ctx) => {
 
   const msg = await getMessage('seller.select_plan');
   const buttons = plans.map((plan) => {
-    const label =
-      plan.type === 'per_unit'
-        ? `${plan.name} - هر ${formatBytes(Number(plan.data_limit))} ${formatPrice(plan.price)}`
-        : `${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${formatPrice(plan.price)}`;
+    const dataLabel = plan.type === 'per_unit'
+      ? `هر ${formatBytesFa(Number(plan.data_limit))}`
+      : formatBytesFa(Number(plan.data_limit));
+    const label = `⭐️ ${dataLabel} | 🕊️ ${toPersianDigits('30')} روز | 💸 ${formatPriceFa(plan.price)}`;
     return [Markup.button.callback(label, `select_plan_${plan.id}`)];
   });
   buttons.push([Markup.button.callback('🔙 بازگشت', 'back_panel')]);

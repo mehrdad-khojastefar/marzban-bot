@@ -6,7 +6,7 @@ import { getSetting } from '../services/settingService';
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban } from '../../core/marzban';
-import { formatBytes, formatPrice, formatDaysLeft } from '../../core/utils/format';
+import { formatBytes, formatPrice, formatDaysLeft, formatBytesFa, formatPriceFa, toPersianDigits } from '../../core/utils/format';
 import { BankCard, PaymentMethod, PrismaClient } from '@prisma/client';
 import { buildCheckoutUrl } from '../../premzy/jwt';
 import { actorFrom, logEvent } from '../../core/events';
@@ -117,7 +117,7 @@ renewAccountScene.enter(async (ctx) => {
     const msg = await getMessage('renew.select_plan');
     const buttons = plans.map((plan) => [
       Markup.button.callback(
-        `🔹 ${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${String(plan.duration_days)} روزه - ${formatPrice(plan.price)}`,
+        `⭐️ ${formatBytesFa(Number(plan.data_limit))} | 🕊️ ${toPersianDigits(String(plan.duration_days))} روز | 💸 ${formatPriceFa(plan.price)}`,
         `renew_plan_${plan.id}`,
       ),
     ]);

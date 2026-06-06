@@ -6,7 +6,7 @@ import { SCENE_ADMIN_ACCOUNTS, SCENE_ADMIN_VIEW_ACCOUNT, SCENE_HOME } from './co
 import { sendOrEdit } from '../services/renderService';
 import { getDb } from '../../core/db';
 import { getMarzban, buildProxiesAndInbounds } from '../../core/marzban';
-import { formatPrice, formatBytes, buildSubUrl, fetchConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
+import { formatPrice, formatBytes, formatBytesFa, formatPriceFa, toPersianDigits, buildSubUrl, fetchConfigs, extractSubToken, toEnglishDigits } from '../../core/utils/format';
 import { loadEnv } from '../../core/utils/config';
 import { actorFrom, logEvent } from '../../core/events';
 
@@ -200,7 +200,10 @@ async function showPlanSelection(ctx: BotContext) {
   ];
 
   for (const plan of uniquePlans) {
-    const label = `${plan.name} - ${formatBytes(Number(plan.data_limit))} - ${formatPrice(plan.price)}`;
+    const dataLabel = plan.type === 'per_unit'
+      ? `هر ${formatBytesFa(Number(plan.data_limit))}`
+      : formatBytesFa(Number(plan.data_limit));
+    const label = `⭐️ ${dataLabel} | 🕊️ ${toPersianDigits('30')} روز | 💸 ${formatPriceFa(plan.price)}`;
     buttons.push([Markup.button.callback(label, `pick_plan_${plan.id}`)]);
   }
 
@@ -225,8 +228,25 @@ adminAccountsScene.action(/^pick_plan_(\d+)$/, async (ctx) => {
   }
 
   ctx.session.adminCreateSellerPlanId = plan.id;
-  ctx.session.adminCreateDataLimit = Number(plan.data_limit);
   ctx.session.adminCreateDuration = 30; // default 30 days
+
+  // per_unit plans (e.g. "1GB = 15,000 تومان") need a quantity from the admin
+  // before we know the final data_limit and price.
+  if (plan.type === 'per_unit') {
+    ctx.session.adminCreateStep = 'pick_quantity';
+    ctx.session.adminCreateDataLimit = undefined;
+    ctx.session.pendingPrice = undefined;
+    const unitSize = formatBytes(Number(plan.data_limit));
+    const unitPrice = formatPrice(plan.price);
+    await sendOrEdit(
+      ctx,
+      `📦 پلن: ${plan.name}\nهر ${unitSize} = ${unitPrice}\n\nچند واحد می‌خواهید؟ (عدد وارد کنید)`,
+      Markup.inlineKeyboard([[Markup.button.callback('🔙 انصراف', 'cancel_create')]]),
+    );
+    return;
+  }
+
+  ctx.session.adminCreateDataLimit = Number(plan.data_limit);
   ctx.session.pendingPrice = plan.price;
 
   const chatId = ctx.session.adminCreateChatId!;
@@ -417,6 +437,56 @@ adminAccountsScene.on('text', async (ctx) => {
     ctx.session.adminCreateChatId = chatId;
     ctx.session.adminCreateStep = 'select_plan';
     await showPlanSelection(ctx);
+    return;
+  }
+
+  // per_unit plan: quantity step → compute total data_limit + price, then confirm
+  if (
+    ctx.session.adminCreateStep === 'pick_quantity' &&
+    ctx.session.adminCreateSellerPlanId
+  ) {
+    const quantity = parseFloat(input);
+    if (isNaN(quantity) || quantity <= 0) {
+      await sendOrEdit(ctx, 'عدد معتبر وارد کنید:', backButton);
+      return;
+    }
+
+    const db = getDb();
+    const plan = await db.sellerPlan.findUnique({
+      where: { id: ctx.session.adminCreateSellerPlanId },
+    });
+    if (!plan) {
+      await showPlanSelection(ctx);
+      return;
+    }
+
+    const dataLimit = Math.round(Number(plan.data_limit) * quantity);
+    const price = Math.round(plan.price * quantity);
+    ctx.session.adminCreateDataLimit = dataLimit;
+    ctx.session.pendingPrice = price;
+    ctx.session.adminCreateDuration = 30;
+    ctx.session.adminCreateStep = undefined;
+
+    const chatId = ctx.session.adminCreateChatId!;
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await sendOrEdit(
+      ctx,
+      `⚠️ تأیید ساخت اکانت\n\n` +
+        `👤 چت آیدی: ${chatId}\n` +
+        `📋 پلن: ${plan.name}\n` +
+        `📊 حجم: ${formatBytes(dataLimit)}\n` +
+        `⏰ مدت: ۳۰ روز\n` +
+        `💰 قیمت: ${formatPrice(price)}\n` +
+        `📅 انقضا: ${formatJalaliDate(expiresAt)}\n\n` +
+        `آیا مطمئن هستید؟`,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.callback('✅ تأیید و ساخت', 'confirm_create'),
+          Markup.button.callback('❌ انصراف', 'cancel_create'),
+        ],
+      ]),
+    );
     return;
   }
 
